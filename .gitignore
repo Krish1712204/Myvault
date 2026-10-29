@@ -1,0 +1,62 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Flutter generated files
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Symbol files
+app.*.symbols
+app.*.map.json
+
+# Obfuscation mapping files
+out.map
+
+# Android
+**/android/**/gradle-app.setting
+**/android/**/build/
+**/android/**/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/.gradle/
+**/android/captures/
+
+# Secrets, Keystores, and Signing Keys
+*.jks
+*.keystore
+key.properties
+signing*.properties
+google-services.json
+GoogleService-Info.plist
+*.env
+*.env.*
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Sensitive Vault & Test Data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+sensitive_test_data/
+test_vault/
+
+# IDE and Editor files
+.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Operating System files
+.DS_Store
+Thumbs.db
+desktop.ini
