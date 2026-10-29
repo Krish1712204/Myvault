@@ -6,6 +6,8 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../../vault_items/data/vault_item_model.dart';
 
+import '../../../../core/security/clipboard_service.dart';
+
 class CategoryItemsScreen extends ConsumerStatefulWidget {
   final String categoryKey;
 
@@ -28,6 +30,39 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
     super.dispose();
   }
 
+  Future<void> _confirmDelete(BuildContext context, VaultItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Item?'),
+        content: Text('Are you sure you want to permanently delete "${item.title}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${item.title} deleted')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final category = VaultCategory.fromKey(widget.categoryKey);
@@ -37,12 +72,20 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
     final subcategories = _getSubcategoriesFor(category);
 
     final filteredItems = items.where((item) {
-      if (_selectedSubcategory != 'All' && item.subcategory != _selectedSubcategory) {
-        return false;
+      if (_selectedSubcategory != 'All') {
+        final itemSub = item.subcategory?.toLowerCase() ?? '';
+        final selSub = _selectedSubcategory.toLowerCase();
+        final matchesSub = itemSub == selSub ||
+            (selSub == 'websites' && itemSub == 'website') ||
+            (selSub == 'website' && itemSub == 'websites') ||
+            (selSub == 'apps' && itemSub == 'app');
+        if (!matchesSub) return false;
       }
       if (query.isEmpty) return true;
       return item.title.toLowerCase().contains(query) ||
-          item.subtitle.toLowerCase().contains(query);
+          item.subtitle.toLowerCase().contains(query) ||
+          (item.url != null && item.url!.toLowerCase().contains(query)) ||
+          (item.username != null && item.username!.toLowerCase().contains(query));
     }).toList();
 
     return Scaffold(
@@ -206,20 +249,32 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                       } else {
                                         _showItemDetailsDialog(context, item);
                                       }
+                                    } else if (action == 'edit') {
+                                      context.push(category == VaultCategory.passwords
+                                          ? '/edit-password/${item.id}'
+                                          : '/add-item');
                                     } else if (action == 'delete') {
-                                      ref.read(vaultItemsProvider.notifier).removeItem(item.id);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('${item.title} deleted')),
-                                      );
+                                      _confirmDelete(context, item);
                                     } else if (action == 'copy') {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Copied ${item.title} details')),
-                                      );
+                                      if (category == VaultCategory.passwords && item.password != null) {
+                                        ClipboardService.copySensitive(
+                                          context: context,
+                                          text: item.password!,
+                                          label: 'Password',
+                                        );
+                                      } else {
+                                        ClipboardService.copyPublic(
+                                          context: context,
+                                          text: item.username ?? item.subtitle,
+                                          label: 'Username',
+                                        );
+                                      }
                                     }
                                   },
                                   itemBuilder: (ctx) => [
                                     const PopupMenuItem(value: 'view', child: Text('View Details')),
-                                    const PopupMenuItem(value: 'copy', child: Text('Copy to Clipboard')),
+                                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                                    const PopupMenuItem(value: 'copy', child: Text('Copy Password')),
                                     const PopupMenuItem(value: 'delete', child: Text('Delete')),
                                   ],
                                 ),

@@ -61,6 +61,8 @@ class VaultItem {
   final bool isFavourite;
   final String date;
   final String? size;
+  final int? createdAt;
+  final int? updatedAt;
 
   const VaultItem({
     required this.id,
@@ -75,6 +77,8 @@ class VaultItem {
     this.isFavourite = false,
     this.date = '12 Oct 2025',
     this.size,
+    this.createdAt,
+    this.updatedAt,
   });
 
   VaultItem copyWith({
@@ -90,6 +94,8 @@ class VaultItem {
     bool? isFavourite,
     String? date,
     String? size,
+    int? createdAt,
+    int? updatedAt,
   }) {
     return VaultItem(
       id: id ?? this.id,
@@ -104,6 +110,8 @@ class VaultItem {
       isFavourite: isFavourite ?? this.isFavourite,
       date: date ?? this.date,
       size: size ?? this.size,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

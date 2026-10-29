@@ -156,6 +156,14 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const AddItemScreen(),
       ),
       GoRoute(
+        path: '/edit-password/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'];
+          return AddItemScreen(itemId: id);
+        },
+      ),
+      GoRoute(
         path: '/password-details/:id',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) {

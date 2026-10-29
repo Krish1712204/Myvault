@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/domain/vault_auth_notifier.dart';
 import '../../features/auth/domain/vault_auth_state.dart';
+import '../../features/vault/data/vault_models.dart';
 import '../../features/vault/data/vault_repository.dart';
 import '../../features/vault_items/data/mock_vault_data.dart';
 import '../../features/vault_items/data/vault_item_model.dart';
@@ -10,7 +11,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
   final VaultRepository _repository;
   final Ref _ref;
 
-  VaultItemsNotifier(this._repository, this._ref) : super(MockVaultData.items) {
+  VaultItemsNotifier(this._repository, this._ref) : super([]) {
     _initListener();
   }
 
@@ -28,30 +29,81 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
   }
 
+  /// Reloads all items from the encrypted database
   Future<void> loadItems() async {
     try {
       final items = await _repository.getAllItems();
-      if (items.isNotEmpty) {
-        state = items;
+      state = items;
+    } catch (_) {
+      if (state.isEmpty) {
+        state = MockVaultData.items;
       }
-    } catch (_) {}
+    }
   }
 
+  /// Saves (creates or updates) a password item with full relational mapping
+  Future<void> savePasswordItem({
+    String? id,
+    required String title,
+    String? websiteUrl,
+    String? username,
+    required String password,
+    String subcategory = 'Website',
+    String? notes,
+    bool isFavourite = false,
+  }) async {
+    final isNew = id == null || id.isEmpty;
+    final itemId = isNew ? 'pwd_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final item = VaultItem(
+      id: itemId,
+      title: title,
+      subtitle: (username != null && username.isNotEmpty) ? username : subcategory,
+      category: VaultCategory.passwords,
+      url: websiteUrl,
+      username: username,
+      password: password,
+      details: notes,
+      subcategory: subcategory,
+      isFavourite: isFavourite,
+      createdAt: now,
+      updatedAt: now,
+    );
+
+    final pwdEntry = PasswordEntry(
+      id: 'entry_$itemId',
+      itemId: itemId,
+      username: username,
+      encryptedPassword: password,
+      websiteUrl: websiteUrl,
+      notes: notes,
+    );
+
+    if (isNew) {
+      await _repository.insertItem(item, passwordEntry: pwdEntry);
+    } else {
+      await _repository.updateItem(item, passwordEntry: pwdEntry);
+    }
+
+    await loadItems();
+  }
+
+  /// Adds a generic vault item
   Future<void> addItem(VaultItem item) async {
     try {
       await _repository.insertItem(item);
-      final items = await _repository.getAllItems();
-      state = items;
+      await loadItems();
     } catch (_) {
       state = [item, ...state];
     }
   }
 
+  /// Toggles an item's favourite status
   Future<void> toggleFavourite(String id) async {
     try {
       await _repository.toggleFavourite(id);
-      final items = await _repository.getAllItems();
-      state = items;
+      await loadItems();
     } catch (_) {
       state = state.map((item) {
         if (item.id == id) {
@@ -62,11 +114,11 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
   }
 
+  /// Deletes an item from the encrypted database
   Future<void> removeItem(String id) async {
     try {
       await _repository.deleteItem(id);
-      final items = await _repository.getAllItems();
-      state = items;
+      await loadItems();
     } catch (_) {
       state = state.where((item) => item.id != id).toList();
     }
@@ -95,20 +147,10 @@ final favouriteItemsProvider = Provider<List<VaultItem>>((ref) {
 final categoryCountsProvider = Provider<Map<VaultCategory, int>>((ref) {
   final items = ref.watch(vaultItemsProvider);
   final map = <VaultCategory, int>{
-    VaultCategory.passwords: 18,
-    VaultCategory.idCards: 8,
-    VaultCategory.documents: 10,
-    VaultCategory.photos: 12,
-    VaultCategory.notes: 6,
-    VaultCategory.contacts: 2,
+    for (final c in VaultCategory.values) c: 0,
   };
-
-  // Dynamically reflect counts from current database items
-  for (final c in VaultCategory.values) {
-    final count = items.where((i) => i.category == c).length;
-    if (count > (map[c] ?? 0)) {
-      map[c] = count;
-    }
+  for (final item in items) {
+    map[item.category] = (map[item.category] ?? 0) + 1;
   }
   return map;
 });

@@ -36,7 +36,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (query.isEmpty) return true;
       return item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
-          (item.username != null && item.username!.toLowerCase().contains(query));
+          (item.username != null && item.username!.toLowerCase().contains(query)) ||
+          (item.url != null && item.url!.toLowerCase().contains(query));
     }).toList();
 
     return Scaffold(

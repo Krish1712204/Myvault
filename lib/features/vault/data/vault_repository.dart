@@ -124,6 +124,64 @@ class VaultRepository {
     });
   }
 
+  /// Updates an existing vault item with its subtype entry inside a transaction
+  Future<void> updateItem(
+    VaultItem item, {
+    PasswordEntry? passwordEntry,
+    IdentityEntry? identityEntry,
+    DocumentEntry? documentEntry,
+    NoteEntry? noteEntry,
+    ContactEntry? contactEntry,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await _db.transaction((txn) async {
+      await txn.update(
+        'vault_items',
+        {
+          'category': item.category.keyName,
+          'title': item.title,
+          'subtitle': item.subtitle,
+          'is_favourite': item.isFavourite ? 1 : 0,
+          'updated_at': now,
+        },
+        where: 'id = ?',
+        whereArgs: [item.id],
+      );
+
+      if (passwordEntry != null) {
+        await txn.insert(
+          'password_entries',
+          passwordEntry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else if (identityEntry != null) {
+        await txn.insert(
+          'identity_entries',
+          identityEntry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else if (documentEntry != null) {
+        await txn.insert(
+          'document_entries',
+          documentEntry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else if (noteEntry != null) {
+        await txn.insert(
+          'notes',
+          noteEntry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else if (contactEntry != null) {
+        await txn.insert(
+          'contacts',
+          contactEntry.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
+  }
+
   /// Toggles an item's favourite status
   Future<void> toggleFavourite(String id) async {
     final rows = await _db.query('vault_items', columns: ['is_favourite'], where: 'id = ?', whereArgs: [id]);
@@ -155,16 +213,20 @@ class VaultRepository {
     await _db.delete('vault_items', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Searches items by query across titles and subtitles
+  /// Searches items by query across titles, subtitles, usernames, and website URLs
   Future<List<VaultItem>> searchItems(String query) async {
     if (query.trim().isEmpty) return getAllItems();
     final cleanQuery = '%${query.trim().toLowerCase()}%';
 
     final rows = await _db.rawQuery('''
-      SELECT * FROM vault_items 
-      WHERE LOWER(title) LIKE ? OR LOWER(subtitle) LIKE ?
-      ORDER BY updated_at DESC
-    ''', [cleanQuery, cleanQuery]);
+      SELECT DISTINCT v.* FROM vault_items v
+      LEFT JOIN password_entries p ON v.id = p.item_id
+      WHERE LOWER(v.title) LIKE ? 
+         OR LOWER(v.subtitle) LIKE ? 
+         OR LOWER(COALESCE(p.username, '')) LIKE ? 
+         OR LOWER(COALESCE(p.website_url, '')) LIKE ?
+      ORDER BY v.updated_at DESC
+    ''', [cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
 
     return Future.wait(rows.map((row) => _mapRowToVaultItem(row)));
   }
@@ -178,7 +240,8 @@ class VaultRepository {
     final subtitle = (row['subtitle'] as String?) ?? '';
     final isFavourite = (row['is_favourite'] as int? ?? 0) == 1;
     final createdAt = row['created_at'] as int? ?? DateTime.now().millisecondsSinceEpoch;
-    final dateStr = DateTime.fromMillisecondsSinceEpoch(createdAt).toString().split(' ').first;
+    final updatedAt = row['updated_at'] as int? ?? createdAt;
+    final dateStr = _formatTimestamp(createdAt);
 
     String? username;
     String? password;
@@ -233,7 +296,22 @@ class VaultRepository {
       isFavourite: isFavourite,
       date: dateStr,
       size: size,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
     );
+  }
+
+  static String _formatTimestamp(int millis) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final month = months[dt.month - 1];
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
   }
 
   /// Seeds initial mock data on first vault creation so existing UI is populated
@@ -304,3 +382,4 @@ class VaultRepository {
     }
   }
 }
+

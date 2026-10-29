@@ -2,70 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../vault_items/presentation/widgets/password_generator_sheet.dart';
 
 class QuickActionsRow extends StatelessWidget {
   const QuickActionsRow({super.key});
 
   void _showGeneratePasswordDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Password Generator'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Generated Strong Password:',
-              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight.withAlpha(90),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withAlpha(60)),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'k9#Pq!7mX@vL2\$wR',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimaryNavy,
-                    ),
-                  ),
-                  Icon(Icons.copy_rounded, color: AppColors.primary, size: 20),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Strength: Very Strong (16 characters, alphanumeric & symbols)',
-              style: TextStyle(color: AppColors.success, fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              context.push('/add-item');
-            },
-            child: const Text('Use in New Item'),
-          ),
-        ],
-      ),
-    );
+    PasswordGeneratorSheet.show(context);
   }
 
   void _showScannerPlaceholder(BuildContext context) {

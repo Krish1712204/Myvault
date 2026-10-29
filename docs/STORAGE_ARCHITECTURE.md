@@ -118,3 +118,4 @@ In Phase 7, backup and restore will be implemented as follows:
    The container is encrypted with AES-256-GCM and formatted with metadata headers indicating timestamp, item counts, and schema version.
 4. **Portability**:
    The exported file (`myvault_backup_<date>.myvault`) can be saved to user-selected destinations (USB, local storage, or shared safely) without exposing the master password or device-bound keystore credentials.
+
