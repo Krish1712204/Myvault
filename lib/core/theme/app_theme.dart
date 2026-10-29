@@ -22,45 +22,58 @@ class AppTheme {
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimaryNavy,
         elevation: 0,
-        centerTitle: true,
-        scrolledUnderElevation: 1,
+        centerTitle: false,
+        scrolledUnderElevation: 0.5,
         titleTextStyle: TextStyle(
           color: AppColors.textPrimaryNavy,
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          letterSpacing: -0.3,
         ),
       ),
       textTheme: const TextTheme(
         headlineLarge: TextStyle(
           color: AppColors.textPrimaryNavy,
-          fontSize: 32,
+          fontSize: 30,
           fontWeight: FontWeight.bold,
+          letterSpacing: -0.5,
         ),
         headlineMedium: TextStyle(
           color: AppColors.textPrimaryNavy,
           fontSize: 24,
           fontWeight: FontWeight.w700,
+          letterSpacing: -0.3,
         ),
         titleLarge: TextStyle(
           color: AppColors.textPrimaryNavy,
-          fontSize: 20,
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+        ),
+        titleMedium: TextStyle(
+          color: AppColors.textPrimaryNavy,
+          fontSize: 16,
           fontWeight: FontWeight.w600,
         ),
         bodyLarge: TextStyle(
           color: AppColors.textSecondaryNavy,
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: FontWeight.normal,
         ),
         bodyMedium: TextStyle(
           color: AppColors.textMutedNavy,
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.normal,
+        ),
+        labelLarge: TextStyle(
+          color: AppColors.textPrimaryNavy,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
         ),
       ),
       cardTheme: CardThemeData(
         color: AppColors.cardSurface,
-        elevation: 1,
-        shadowColor: AppColors.textPrimaryNavy.withAlpha(20),
+        elevation: 0,
+        shadowColor: AppColors.textPrimaryNavy.withAlpha(12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16.0),
           side: const BorderSide(
@@ -68,10 +81,7 @@ class AppTheme {
             width: 1.0,
           ),
         ),
-        margin: const EdgeInsets.symmetric(
-          vertical: AppSpacing.sm,
-          horizontal: AppSpacing.xs,
-        ),
+        margin: EdgeInsets.zero,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -79,11 +89,11 @@ class AppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12.0),
+            borderRadius: BorderRadius.circular(14.0),
           ),
           padding: const EdgeInsets.symmetric(
             horizontal: AppSpacing.lg,
-            vertical: AppSpacing.md,
+            vertical: 16.0,
           ),
           textStyle: const TextStyle(
             fontSize: 16,
@@ -91,34 +101,43 @@ class AppTheme {
           ),
         ),
       ),
-      floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16.0)),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.textPrimaryNavy,
+          side: const BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14.0),
+          ),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.lg,
+            vertical: 14.0,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surface,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12.0),
+          borderRadius: BorderRadius.circular(14.0),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12.0),
+          borderRadius: BorderRadius.circular(14.0),
           borderSide: const BorderSide(color: AppColors.border),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12.0),
+          borderRadius: BorderRadius.circular(14.0),
           borderSide: const BorderSide(color: AppColors.primary, width: 2),
         ),
         contentPadding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
-          vertical: AppSpacing.md,
+          vertical: 16.0,
+        ),
+        hintStyle: const TextStyle(
+          color: AppColors.textMutedNavy,
+          fontSize: 14,
         ),
       ),
     );
   }
 }
-
