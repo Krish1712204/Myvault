@@ -222,7 +222,7 @@ class VaultRepository {
     await _db.delete('vault_items', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Searches items by query across titles, subtitles, usernames, website URLs, holder names, and document names
+  /// Searches items by query across titles, subtitles, usernames, website URLs, holder names, document names, note contents, tags, and contacts
   Future<List<VaultItem>> searchItems(String query) async {
     if (query.trim().isEmpty) return getAllItems();
     final cleanQuery = '%${query.trim().toLowerCase()}%';
@@ -232,15 +232,34 @@ class VaultRepository {
       LEFT JOIN password_entries p ON v.id = p.item_id
       LEFT JOIN identity_entries i ON v.id = i.item_id
       LEFT JOIN document_entries d ON v.id = d.item_id
+      LEFT JOIN notes n ON v.id = n.item_id
+      LEFT JOIN contacts c ON v.id = c.item_id
       WHERE LOWER(v.title) LIKE ? 
          OR LOWER(v.subtitle) LIKE ? 
          OR LOWER(COALESCE(p.username, '')) LIKE ? 
          OR LOWER(COALESCE(p.website_url, '')) LIKE ?
+         OR LOWER(COALESCE(p.notes, '')) LIKE ?
          OR LOWER(COALESCE(i.full_name, '')) LIKE ?
          OR LOWER(COALESCE(i.document_number, '')) LIKE ?
+         OR LOWER(COALESCE(i.notes, '')) LIKE ?
          OR LOWER(COALESCE(d.file_name, '')) LIKE ?
+         OR LOWER(COALESCE(d.notes, '')) LIKE ?
+         OR LOWER(COALESCE(n.content, '')) LIKE ?
+         OR LOWER(COALESCE(n.tags, '')) LIKE ?
+         OR LOWER(COALESCE(c.phone_number, '')) LIKE ?
+         OR LOWER(COALESCE(c.email, '')) LIKE ?
+         OR LOWER(COALESCE(c.company, '')) LIKE ?
+         OR LOWER(COALESCE(c.job_title, '')) LIKE ?
+         OR LOWER(COALESCE(c.address, '')) LIKE ?
+         OR LOWER(COALESCE(c.notes, '')) LIKE ?
+         OR LOWER(COALESCE(c.tags, '')) LIKE ?
       ORDER BY v.updated_at DESC
-    ''', [cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
+    ''', [
+      cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery,
+      cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery,
+      cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery,
+      cleanQuery, cleanQuery, cleanQuery, cleanQuery,
+    ]);
 
     return Future.wait(rows.map((row) => _mapRowToVaultItem(row)));
   }
@@ -278,6 +297,20 @@ class VaultRepository {
     int? fileSize;
     String? mimeType;
     String? fileExtension;
+
+    // Notes specific
+    String? colorTag;
+    String? tags;
+
+    // Contacts specific
+    String? phoneNumber;
+    String? email;
+    String? company;
+    String? jobTitle;
+    String? address;
+    String? birthday;
+    String? secondaryPhone;
+    String? secondaryEmail;
 
     if (category == VaultCategory.passwords) {
       final pRows = await _db.query('password_entries', where: 'item_id = ?', whereArgs: [id], limit: 1);
@@ -318,13 +351,26 @@ class VaultRepository {
     } else if (category == VaultCategory.notes) {
       final nRows = await _db.query('notes', where: 'item_id = ?', whereArgs: [id], limit: 1);
       if (nRows.isNotEmpty) {
-        details = nRows.first['content'] as String?;
+        final nRow = nRows.first;
+        details = nRow['content'] as String?;
+        colorTag = nRow['color_tag'] as String?;
+        tags = nRow['tags'] as String?;
       }
     } else if (category == VaultCategory.contacts) {
       final cRows = await _db.query('contacts', where: 'item_id = ?', whereArgs: [id], limit: 1);
       if (cRows.isNotEmpty) {
-        details = cRows.first['phone_number'] as String?;
-        username = cRows.first['email'] as String?;
+        final cRow = cRows.first;
+        phoneNumber = cRow['phone_number'] as String?;
+        email = cRow['email'] as String?;
+        company = cRow['company'] as String?;
+        jobTitle = cRow['job_title'] as String?;
+        address = cRow['address'] as String?;
+        birthday = cRow['birthday'] as String?;
+        details = cRow['notes'] as String?;
+        tags = cRow['tags'] as String?;
+        secondaryPhone = cRow['secondary_phone'] as String?;
+        secondaryEmail = cRow['secondary_email'] as String?;
+        username = email;
       }
     }
 
@@ -354,6 +400,16 @@ class VaultRepository {
       fileSize: fileSize,
       mimeType: mimeType,
       fileExtension: fileExtension,
+      colorTag: colorTag,
+      tags: tags,
+      phoneNumber: phoneNumber,
+      email: email,
+      company: company,
+      jobTitle: jobTitle,
+      address: address,
+      birthday: birthday,
+      secondaryPhone: secondaryPhone,
+      secondaryEmail: secondaryEmail,
     );
   }
 
@@ -417,6 +473,7 @@ class VaultRepository {
           id: 'note_${item.id}',
           itemId: item.id,
           content: item.details ?? 'Personal project notes',
+          tags: 'personal,ideas',
         );
       } else if (item.category == VaultCategory.contacts) {
         contact = ContactEntry(
@@ -424,6 +481,9 @@ class VaultRepository {
           itemId: item.id,
           phoneNumber: '+91 98765 43210',
           email: item.username,
+          company: 'Acme Corp',
+          jobTitle: 'Software Engineer',
+          tags: 'work,colleague',
         );
       }
 

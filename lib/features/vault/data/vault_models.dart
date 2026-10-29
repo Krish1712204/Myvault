@@ -135,12 +135,14 @@ class NoteEntry {
   final String itemId;
   final String content;
   final String? colorTag;
+  final String? tags;
 
   const NoteEntry({
     required this.id,
     required this.itemId,
     required this.content,
     this.colorTag,
+    this.tags,
   });
 
   Map<String, dynamic> toMap() => {
@@ -148,6 +150,7 @@ class NoteEntry {
         'item_id': itemId,
         'content': content,
         'color_tag': colorTag,
+        'tags': tags,
       };
 
   factory NoteEntry.fromMap(Map<String, dynamic> map) => NoteEntry(
@@ -155,6 +158,7 @@ class NoteEntry {
         itemId: map['item_id'] as String,
         content: map['content'] as String,
         colorTag: map['color_tag'] as String?,
+        tags: map['tags'] as String?,
       );
 }
 
@@ -164,7 +168,13 @@ class ContactEntry {
   final String phoneNumber;
   final String? email;
   final String? company;
+  final String? jobTitle;
   final String? address;
+  final String? birthday;
+  final String? notes;
+  final String? tags;
+  final String? secondaryPhone;
+  final String? secondaryEmail;
 
   const ContactEntry({
     required this.id,
@@ -172,7 +182,13 @@ class ContactEntry {
     required this.phoneNumber,
     this.email,
     this.company,
+    this.jobTitle,
     this.address,
+    this.birthday,
+    this.notes,
+    this.tags,
+    this.secondaryPhone,
+    this.secondaryEmail,
   });
 
   Map<String, dynamic> toMap() => {
@@ -181,7 +197,13 @@ class ContactEntry {
         'phone_number': phoneNumber,
         'email': email,
         'company': company,
+        'job_title': jobTitle,
         'address': address,
+        'birthday': birthday,
+        'notes': notes,
+        'tags': tags,
+        'secondary_phone': secondaryPhone,
+        'secondary_email': secondaryEmail,
       };
 
   factory ContactEntry.fromMap(Map<String, dynamic> map) => ContactEntry(
@@ -190,6 +212,12 @@ class ContactEntry {
         phoneNumber: map['phone_number'] as String,
         email: map['email'] as String?,
         company: map['company'] as String?,
+        jobTitle: map['job_title'] as String?,
         address: map['address'] as String?,
+        birthday: map['birthday'] as String?,
+        notes: map['notes'] as String?,
+        tags: map['tags'] as String?,
+        secondaryPhone: map['secondary_phone'] as String?,
+        secondaryEmail: map['secondary_email'] as String?,
       );
 }

@@ -2,7 +2,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 
 /// Database schema definitions, migrations, and table creation logic for SQLCipher
 class VaultSchema {
-  static const int currentVersion = 2;
+  static const int currentVersion = 3;
   static const String dbFileName = 'myvault_encrypted.db';
 
   static Future<void> onConfigure(Database db) async {
@@ -77,6 +77,7 @@ class VaultSchema {
           item_id TEXT NOT NULL UNIQUE,
           content TEXT NOT NULL,
           color_tag TEXT,
+          tags TEXT,
           FOREIGN KEY (item_id) REFERENCES vault_items (id) ON DELETE CASCADE
         );
       ''');
@@ -89,7 +90,13 @@ class VaultSchema {
           phone_number TEXT NOT NULL,
           email TEXT,
           company TEXT,
+          job_title TEXT,
           address TEXT,
+          birthday TEXT,
+          notes TEXT,
+          tags TEXT,
+          secondary_phone TEXT,
+          secondary_email TEXT,
           FOREIGN KEY (item_id) REFERENCES vault_items (id) ON DELETE CASCADE
         );
       ''');
@@ -131,6 +138,16 @@ class VaultSchema {
     if (oldVersion < 2) {
       // V2: Add optional attachment_path to identity_entries
       await db.execute('ALTER TABLE identity_entries ADD COLUMN attachment_path TEXT;');
+    }
+    if (oldVersion < 3) {
+      // V3: Extend notes with tags and contacts with full profile fields
+      await db.execute('ALTER TABLE notes ADD COLUMN tags TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN job_title TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN birthday TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN notes TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN tags TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN secondary_phone TEXT;');
+      await db.execute('ALTER TABLE contacts ADD COLUMN secondary_email TEXT;');
     }
   }
 }

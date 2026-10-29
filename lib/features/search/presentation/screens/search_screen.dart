@@ -40,7 +40,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           (item.url != null && item.url!.toLowerCase().contains(query)) ||
           (item.fullName != null && item.fullName!.toLowerCase().contains(query)) ||
           (item.documentNumber != null && item.documentNumber!.toLowerCase().contains(query)) ||
-          (item.fileName != null && item.fileName!.toLowerCase().contains(query));
+          (item.fileName != null && item.fileName!.toLowerCase().contains(query)) ||
+          (item.details != null && item.details!.toLowerCase().contains(query)) ||
+          (item.tags != null && item.tags!.toLowerCase().contains(query)) ||
+          (item.phoneNumber != null && item.phoneNumber!.toLowerCase().contains(query)) ||
+          (item.email != null && item.email!.toLowerCase().contains(query)) ||
+          (item.company != null && item.company!.toLowerCase().contains(query)) ||
+          (item.jobTitle != null && item.jobTitle!.toLowerCase().contains(query)) ||
+          (item.address != null && item.address!.toLowerCase().contains(query));
     }).toList();
 
     return Scaffold(
@@ -76,6 +83,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   TextField(
                     controller: _searchController,
                     onChanged: (val) => setState(() {}),
+                    onSubmitted: (val) {
+                      if (val.trim().isNotEmpty) {
+                        ref.read(recentSearchesProvider.notifier).addSearch(val.trim());
+                      }
+                    },
                     decoration: InputDecoration(
                       hintText: 'Search passwords, documents, notes...',
                       prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMutedNavy),
@@ -336,6 +348,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
+        final subtitle = _formatSafeSubtitle(item);
+
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
@@ -346,21 +360,37 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 context.push('/id-details/${item.id}');
               } else if (item.category == VaultCategory.documents || item.category == VaultCategory.photos) {
                 context.push('/document-details/${item.id}');
+              } else if (item.category == VaultCategory.notes) {
+                context.push('/note-details/${item.id}');
+              } else if (item.category == VaultCategory.contacts) {
+                context.push('/contact-details/${item.id}');
               } else {
                 context.push('/category/${item.category.keyName}');
               }
             },
             leading: _buildSearchItemAvatar(item),
-            title: Text(
-              item.title,
-              style: const TextStyle(
-                color: AppColors.textPrimaryNavy,
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.textPrimaryNavy,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _buildCategoryBadge(item.category),
+              ],
             ),
             subtitle: Text(
-              item.subtitle,
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textMutedNavy,
                 fontSize: 13,
@@ -381,7 +411,154 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
+  String _formatSafeSubtitle(VaultItem item) {
+    if (item.category == VaultCategory.idCards) {
+      final docNum = item.documentNumber;
+      if (docNum != null && docNum.isNotEmpty) {
+        final clean = docNum.replaceAll(' ', '');
+        final masked = clean.length <= 4 ? '•••• $clean' : '•••• ${clean.substring(clean.length - 4)}';
+        return '${item.subtitle.isNotEmpty ? "${item.subtitle} · " : ""}$masked';
+      }
+      return item.subtitle;
+    }
+    if (item.category == VaultCategory.passwords) {
+      if (item.username != null && item.username!.isNotEmpty) {
+        return item.username!;
+      }
+      return item.url ?? item.subtitle;
+    }
+    if (item.category == VaultCategory.contacts) {
+      final parts = <String>[];
+      if (item.jobTitle != null && item.jobTitle!.isNotEmpty) parts.add(item.jobTitle!);
+      if (item.company != null && item.company!.isNotEmpty) parts.add(item.company!);
+      if (parts.isEmpty && item.phoneNumber != null && item.phoneNumber!.isNotEmpty) {
+        parts.add(item.phoneNumber!);
+      }
+      return parts.isNotEmpty ? parts.join(' · ') : item.subtitle;
+    }
+    return item.subtitle;
+  }
+
+  Widget _buildCategoryBadge(VaultCategory category) {
+    Color bg;
+    Color fg;
+    String label;
+
+    switch (category) {
+      case VaultCategory.passwords:
+        bg = AppColors.categoryPasswordsBg;
+        fg = AppColors.categoryPasswords;
+        label = 'Password';
+        break;
+      case VaultCategory.idCards:
+        bg = AppColors.categoryIdCardsBg;
+        fg = AppColors.categoryIdCards;
+        label = 'ID Card';
+        break;
+      case VaultCategory.documents:
+        bg = AppColors.categoryDocumentsBg;
+        fg = AppColors.categoryDocuments;
+        label = 'Document';
+        break;
+      case VaultCategory.photos:
+        bg = AppColors.categoryPhotosBg;
+        fg = AppColors.categoryPhotos;
+        label = 'Photo';
+        break;
+      case VaultCategory.notes:
+        bg = AppColors.categoryNotesBg;
+        fg = AppColors.categoryNotes;
+        label = 'Note';
+        break;
+      case VaultCategory.contacts:
+        bg = AppColors.categoryContactsBg;
+        fg = AppColors.categoryContacts;
+        label = 'Contact';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
   Widget _buildSearchItemAvatar(VaultItem item) {
+    if (item.category == VaultCategory.passwords) {
+      Color bg = AppColors.primaryLight;
+      Color textCol = AppColors.primary;
+      String letter = item.title.isNotEmpty ? item.title[0].toUpperCase() : 'P';
+      if (item.title == 'Google') {
+        bg = const Color(0xFFEA4335).withAlpha(30);
+        textCol = const Color(0xFFEA4335);
+      } else if (item.title == 'GitHub') {
+        bg = const Color(0xFF24292E).withAlpha(30);
+        textCol = const Color(0xFF24292E);
+      } else if (item.title == 'Amazon') {
+        bg = const Color(0xFFFF9900).withAlpha(30);
+        textCol = const Color(0xFFFF9900);
+      } else if (item.title == 'Netflix') {
+        bg = const Color(0xFFE50914).withAlpha(30);
+        textCol = const Color(0xFFE50914);
+      }
+
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Center(
+          child: Text(
+            letter,
+            style: TextStyle(
+              color: textCol,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (item.category == VaultCategory.contacts) {
+      final name = item.title.trim();
+      final parts = name.split(RegExp(r'\s+'));
+      final initials = parts.length >= 2
+          ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
+          : (name.isNotEmpty ? name[0].toUpperCase() : 'C');
+      return Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: AppColors.categoryContactsBg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Center(
+          child: Text(
+            initials,
+            style: const TextStyle(
+              color: AppColors.categoryContacts,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      );
+    }
+
     IconData icon = Icons.lock_outline_rounded;
     Color color = AppColors.primary;
     Color bg = AppColors.primaryLight;
@@ -402,10 +579,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       icon = Icons.sticky_note_2_rounded;
       color = AppColors.categoryNotes;
       bg = AppColors.categoryNotesBg;
-    } else if (item.category == VaultCategory.contacts) {
-      icon = Icons.person_rounded;
-      color = AppColors.categoryContacts;
-      bg = AppColors.categoryContactsBg;
     }
 
     return Container(

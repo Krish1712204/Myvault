@@ -80,6 +80,18 @@ class VaultItem {
   final String? mimeType;
   final String? fileExtension;
 
+  // Notes & Contacts specific fields (Phase 6)
+  final String? colorTag;
+  final String? tags;
+  final String? phoneNumber;
+  final String? email;
+  final String? company;
+  final String? jobTitle;
+  final String? address;
+  final String? birthday;
+  final String? secondaryPhone;
+  final String? secondaryEmail;
+
   const VaultItem({
     required this.id,
     required this.title,
@@ -107,6 +119,16 @@ class VaultItem {
     this.fileSize,
     this.mimeType,
     this.fileExtension,
+    this.colorTag,
+    this.tags,
+    this.phoneNumber,
+    this.email,
+    this.company,
+    this.jobTitle,
+    this.address,
+    this.birthday,
+    this.secondaryPhone,
+    this.secondaryEmail,
   });
 
   VaultItem copyWith({
@@ -136,6 +158,16 @@ class VaultItem {
     int? fileSize,
     String? mimeType,
     String? fileExtension,
+    String? colorTag,
+    String? tags,
+    String? phoneNumber,
+    String? email,
+    String? company,
+    String? jobTitle,
+    String? address,
+    String? birthday,
+    String? secondaryPhone,
+    String? secondaryEmail,
   }) {
     return VaultItem(
       id: id ?? this.id,
@@ -164,6 +196,16 @@ class VaultItem {
       fileSize: fileSize ?? this.fileSize,
       mimeType: mimeType ?? this.mimeType,
       fileExtension: fileExtension ?? this.fileExtension,
+      colorTag: colorTag ?? this.colorTag,
+      tags: tags ?? this.tags,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      email: email ?? this.email,
+      company: company ?? this.company,
+      jobTitle: jobTitle ?? this.jobTitle,
+      address: address ?? this.address,
+      birthday: birthday ?? this.birthday,
+      secondaryPhone: secondaryPhone ?? this.secondaryPhone,
+      secondaryEmail: secondaryEmail ?? this.secondaryEmail,
     );
   }
 }

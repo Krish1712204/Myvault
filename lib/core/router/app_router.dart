@@ -12,11 +12,15 @@ import '../../features/dashboard/presentation/screens/home_dashboard_screen.dart
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/settings/presentation/screens/backup_restore_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/vault_items/presentation/screens/add_contact_screen.dart';
 import '../../features/vault_items/presentation/screens/add_document_screen.dart';
 import '../../features/vault_items/presentation/screens/add_identity_screen.dart';
 import '../../features/vault_items/presentation/screens/add_item_screen.dart';
+import '../../features/vault_items/presentation/screens/add_note_screen.dart';
+import '../../features/vault_items/presentation/screens/contact_details_screen.dart';
 import '../../features/vault_items/presentation/screens/document_details_screen.dart';
 import '../../features/vault_items/presentation/screens/identity_details_screen.dart';
+import '../../features/vault_items/presentation/screens/note_details_screen.dart';
 import '../../features/vault_items/presentation/screens/password_details_screen.dart';
 import '../../shared/widgets/main_scaffold_shell.dart';
 
@@ -215,6 +219,48 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id'];
           return AddDocumentScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/note-details/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return NoteDetailsScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/add-note',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AddNoteScreen(),
+      ),
+      GoRoute(
+        path: '/edit-note/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'];
+          return AddNoteScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/contact-details/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return ContactDetailsScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/add-contact',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AddContactScreen(),
+      ),
+      GoRoute(
+        path: '/edit-contact/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'];
+          return AddContactScreen(itemId: id);
         },
       ),
       GoRoute(

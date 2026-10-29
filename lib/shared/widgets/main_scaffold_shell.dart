@@ -100,6 +100,38 @@ class MainScaffoldShell extends StatelessWidget {
                   context.push('/add-document');
                 },
               ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.categoryNotesBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.sticky_note_2_rounded, color: AppColors.categoryNotes),
+                ),
+                title: const Text('Note', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Secure, multiline private notes with tags'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/add-note');
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.categoryContactsBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.person_rounded, color: AppColors.categoryContacts),
+                ),
+                title: const Text('Contact', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Private encrypted contact with phone and email'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/add-contact');
+                },
+              ),
             ],
           ),
         ),

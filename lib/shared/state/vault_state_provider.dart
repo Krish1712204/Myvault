@@ -319,6 +319,124 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     await fileService.clearTemporaryPreviews();
   }
 
+  /// Saves (creates or updates) a Note item
+  Future<void> saveNoteItem({
+    String? id,
+    required String title,
+    required String content,
+    String? category,
+    String? colorTag,
+    String? tags,
+    bool isFavourite = false,
+  }) async {
+    final isNew = id == null || id.isEmpty;
+    final itemId = isNew ? 'note_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final item = VaultItem(
+      id: itemId,
+      title: title,
+      subtitle: content.length > 50 ? '${content.substring(0, 50)}...' : content,
+      category: VaultCategory.notes,
+      details: content,
+      subcategory: category ?? 'General',
+      isFavourite: isFavourite,
+      createdAt: now,
+      updatedAt: now,
+      colorTag: colorTag,
+      tags: tags,
+    );
+
+    final noteEntry = NoteEntry(
+      id: 'entry_$itemId',
+      itemId: itemId,
+      content: content,
+      colorTag: colorTag,
+      tags: tags,
+    );
+
+    if (isNew) {
+      await _repository.insertItem(item, noteEntry: noteEntry);
+    } else {
+      await _repository.updateItem(item, noteEntry: noteEntry);
+    }
+
+    await loadItems();
+  }
+
+  /// Saves (creates or updates) a Contact item
+  Future<void> saveContactItem({
+    String? id,
+    required String fullName,
+    required String phoneNumber,
+    String? email,
+    String? company,
+    String? jobTitle,
+    String? address,
+    String? birthday,
+    String? notes,
+    String? category,
+    String? tags,
+    String? secondaryPhone,
+    String? secondaryEmail,
+    bool isFavourite = false,
+  }) async {
+    final isNew = id == null || id.isEmpty;
+    final itemId = isNew ? 'cnt_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final subtitle = [
+      if (jobTitle != null && jobTitle.isNotEmpty) jobTitle,
+      if (company != null && company.isNotEmpty) company,
+      if ((jobTitle == null || jobTitle.isEmpty) && (company == null || company.isEmpty)) phoneNumber,
+    ].join(' · ');
+
+    final item = VaultItem(
+      id: itemId,
+      title: fullName,
+      subtitle: subtitle,
+      category: VaultCategory.contacts,
+      details: notes,
+      subcategory: category ?? 'Personal',
+      isFavourite: isFavourite,
+      createdAt: now,
+      updatedAt: now,
+      phoneNumber: phoneNumber,
+      email: email,
+      company: company,
+      jobTitle: jobTitle,
+      address: address,
+      birthday: birthday,
+      tags: tags,
+      secondaryPhone: secondaryPhone,
+      secondaryEmail: secondaryEmail,
+      username: email,
+    );
+
+    final contactEntry = ContactEntry(
+      id: 'entry_$itemId',
+      itemId: itemId,
+      phoneNumber: phoneNumber,
+      email: email,
+      company: company,
+      jobTitle: jobTitle,
+      address: address,
+      birthday: birthday,
+      notes: notes,
+      tags: tags,
+      secondaryPhone: secondaryPhone,
+      secondaryEmail: secondaryEmail,
+    );
+
+    if (isNew) {
+      await _repository.insertItem(item, contactEntry: contactEntry);
+    } else {
+      await _repository.updateItem(item, contactEntry: contactEntry);
+    }
+
+    await loadItems();
+  }
+
   /// Adds a generic vault item
   Future<void> addItem(VaultItem item) async {
     try {

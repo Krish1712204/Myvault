@@ -85,7 +85,14 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       return item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           (item.url != null && item.url!.toLowerCase().contains(query)) ||
-          (item.username != null && item.username!.toLowerCase().contains(query));
+          (item.username != null && item.username!.toLowerCase().contains(query)) ||
+          (item.details != null && item.details!.toLowerCase().contains(query)) ||
+          (item.tags != null && item.tags!.toLowerCase().contains(query)) ||
+          (item.phoneNumber != null && item.phoneNumber!.toLowerCase().contains(query)) ||
+          (item.email != null && item.email!.toLowerCase().contains(query)) ||
+          (item.company != null && item.company!.toLowerCase().contains(query)) ||
+          (item.jobTitle != null && item.jobTitle!.toLowerCase().contains(query)) ||
+          (item.address != null && item.address!.toLowerCase().contains(query));
     }).toList();
 
     return Scaffold(
@@ -125,6 +132,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                 context.push('/add-id');
               } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
                 context.push('/add-document');
+              } else if (category == VaultCategory.notes) {
+                context.push('/add-note');
+              } else if (category == VaultCategory.contacts) {
+                context.push('/add-contact');
               } else {
                 context.push('/add-item');
               }
@@ -221,6 +232,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                 context.push('/id-details/${item.id}');
                               } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
                                 context.push('/document-details/${item.id}');
+                              } else if (category == VaultCategory.notes) {
+                                context.push('/note-details/${item.id}');
+                              } else if (category == VaultCategory.contacts) {
+                                context.push('/contact-details/${item.id}');
                               } else {
                                 _showItemDetailsDialog(context, item);
                               }
@@ -234,13 +249,37 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                 fontSize: 15,
                               ),
                             ),
-                            subtitle: Text(
-                              item.subtitle,
-                              style: const TextStyle(
-                                color: AppColors.textMutedNavy,
-                                fontSize: 13,
-                              ),
-                            ),
+                            subtitle: category == VaultCategory.notes
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.subtitle,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: AppColors.textMutedNavy,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Updated: ${item.date}',
+                                        style: const TextStyle(
+                                          color: AppColors.textMutedNavy,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Text(
+                                    item.subtitle,
+                                    style: const TextStyle(
+                                      color: AppColors.textMutedNavy,
+                                      fontSize: 13,
+                                    ),
+                                  ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -264,6 +303,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                         context.push('/id-details/${item.id}');
                                       } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
                                         context.push('/document-details/${item.id}');
+                                      } else if (category == VaultCategory.notes) {
+                                        context.push('/note-details/${item.id}');
+                                      } else if (category == VaultCategory.contacts) {
+                                        context.push('/contact-details/${item.id}');
                                       } else {
                                         _showItemDetailsDialog(context, item);
                                       }
@@ -274,6 +317,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                         context.push('/edit-id/${item.id}');
                                       } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
                                         context.push('/edit-document/${item.id}');
+                                      } else if (category == VaultCategory.notes) {
+                                        context.push('/edit-note/${item.id}');
+                                      } else if (category == VaultCategory.contacts) {
+                                        context.push('/edit-contact/${item.id}');
                                       } else {
                                         context.push('/add-item');
                                       }
@@ -292,11 +339,23 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                           text: item.documentNumber!,
                                           label: '${item.title} Number',
                                         );
+                                      } else if (category == VaultCategory.notes && item.details != null && item.details!.isNotEmpty) {
+                                        ClipboardService.copyPublic(
+                                          context: context,
+                                          text: item.details!,
+                                          label: 'Note Content',
+                                        );
+                                      } else if (category == VaultCategory.contacts && item.phoneNumber != null && item.phoneNumber!.isNotEmpty) {
+                                        ClipboardService.copyPublic(
+                                          context: context,
+                                          text: item.phoneNumber!,
+                                          label: 'Phone Number',
+                                        );
                                       } else {
                                         ClipboardService.copyPublic(
                                           context: context,
                                           text: item.username ?? item.subtitle,
-                                          label: 'Username',
+                                          label: 'Item Info',
                                         );
                                       }
                                     }
@@ -309,7 +368,13 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                       child: Text(
                                         category == VaultCategory.passwords
                                             ? 'Copy Password'
-                                            : (category == VaultCategory.idCards ? 'Copy ID Number' : 'Copy Info'),
+                                            : (category == VaultCategory.idCards
+                                                ? 'Copy ID Number'
+                                                : (category == VaultCategory.notes
+                                                    ? 'Copy Content'
+                                                    : (category == VaultCategory.contacts
+                                                        ? 'Copy Phone'
+                                                        : 'Copy Info'))),
                                       ),
                                     ),
                                     const PopupMenuItem(value: 'delete', child: Text('Delete')),
@@ -367,6 +432,32 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       );
     }
 
+    if (item.category == VaultCategory.contacts) {
+      final name = item.title.trim();
+      final parts = name.split(RegExp(r'\s+'));
+      final initials = parts.length >= 2
+          ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
+          : (name.isNotEmpty ? name[0].toUpperCase() : 'C');
+      return Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: AppColors.categoryContactsBg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            initials,
+            style: const TextStyle(
+              color: AppColors.categoryContacts,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+        ),
+      );
+    }
+
     IconData icon = Icons.lock_outline_rounded;
     Color color = AppColors.primary;
     Color bg = AppColors.primaryLight;
@@ -387,10 +478,6 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       icon = Icons.sticky_note_2_rounded;
       color = AppColors.categoryNotes;
       bg = AppColors.categoryNotesBg;
-    } else if (item.category == VaultCategory.contacts) {
-      icon = Icons.person_rounded;
-      color = AppColors.categoryContacts;
-      bg = AppColors.categoryContactsBg;
     }
 
     return Container(
@@ -412,8 +499,12 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         return ['All', 'Government', 'Personal', 'Work'];
       case VaultCategory.documents:
         return ['All', 'PDF', 'Images', 'Others'];
-      default:
-        return [];
+      case VaultCategory.photos:
+        return ['All', 'Camera', 'Screenshots', 'Saved'];
+      case VaultCategory.notes:
+        return ['All', 'Personal', 'Work', 'Ideas', 'Finance', 'Other'];
+      case VaultCategory.contacts:
+        return ['All', 'Personal', 'Work', 'Family', 'Emergency', 'Other'];
     }
   }
 
