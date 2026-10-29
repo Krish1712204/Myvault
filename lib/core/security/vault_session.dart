@@ -1,24 +1,28 @@
 import 'dart:typed_data';
 
 /// In-memory ephemeral session manager that protects decrypted keys and session state.
-/// Holds sensitive master key bytes ONLY while the vault is unlocked and zeroizes them on lock.
+/// Holds sensitive Vault Encryption Key (VEK) bytes ONLY while the vault is unlocked
+/// and zeroizes them immediately upon locking.
 class VaultSession {
-  Uint8List? _ephemeralMasterKey;
+  Uint8List? _ephemeralVek;
   DateTime? _lastActivityTime;
 
-  bool get isActive => _ephemeralMasterKey != null;
+  bool get isActive => _ephemeralVek != null;
   DateTime? get lastActivityTime => _lastActivityTime;
 
-  /// Ephemeral copy of derived master key bytes
-  Uint8List? get masterKey => _ephemeralMasterKey != null
-      ? Uint8List.fromList(_ephemeralMasterKey!)
+  /// Ephemeral copy of decrypted Vault Encryption Key (VEK) bytes
+  Uint8List? get vek => _ephemeralVek != null
+      ? Uint8List.fromList(_ephemeralVek!)
       : null;
 
-  /// Starts an active session with the derived master key
-  void startSession(List<int> masterKeyBytes) {
+  /// Backwards-compatible alias for masterKey / VEK
+  Uint8List? get masterKey => vek;
+
+  /// Starts an active session with the decrypted VEK
+  void startSession(List<int> vekBytes) {
     // Zero out any existing key first
     clear();
-    _ephemeralMasterKey = Uint8List.fromList(masterKeyBytes);
+    _ephemeralVek = Uint8List.fromList(vekBytes);
     _lastActivityTime = DateTime.now();
   }
 
@@ -38,9 +42,9 @@ class VaultSession {
 
   /// Explicitly terminates session and cryptographically overwrites (zeroizes) key bytes in memory
   void clear() {
-    if (_ephemeralMasterKey != null) {
-      _ephemeralMasterKey!.fillRange(0, _ephemeralMasterKey!.length, 0);
-      _ephemeralMasterKey = null;
+    if (_ephemeralVek != null) {
+      _ephemeralVek!.fillRange(0, _ephemeralVek!.length, 0);
+      _ephemeralVek = null;
     }
     _lastActivityTime = null;
   }

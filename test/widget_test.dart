@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:myvault/features/auth/domain/vault_auth_notifier.dart';
 import 'package:myvault/features/auth/domain/vault_auth_state.dart';
 import 'package:myvault/main.dart';
@@ -12,6 +13,8 @@ class UnlockedAuthNotifier extends VaultAuthNotifier {
     required super.storageService,
     required super.biometricService,
     required super.session,
+    required super.vaultDb,
+    required super.repository,
   }) {
     state = const VaultAuthState(
       status: VaultStatus.unlocked,
@@ -26,6 +29,11 @@ class UnlockedAuthNotifier extends VaultAuthNotifier {
 }
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
   });
@@ -60,6 +68,8 @@ void main() {
                 storageService: ref.watch(vaultStorageServiceProvider),
                 biometricService: ref.watch(vaultBiometricServiceProvider),
                 session: ref.watch(vaultSessionProvider),
+                vaultDb: ref.watch(vaultDatabaseProvider),
+                repository: ref.watch(vaultRepositoryProvider),
               )),
         ],
         child: const MyVaultApp(),
@@ -98,6 +108,8 @@ void main() {
                 storageService: ref.watch(vaultStorageServiceProvider),
                 biometricService: ref.watch(vaultBiometricServiceProvider),
                 session: ref.watch(vaultSessionProvider),
+                vaultDb: ref.watch(vaultDatabaseProvider),
+                repository: ref.watch(vaultRepositoryProvider),
               )),
         ],
         child: const MyVaultApp(),

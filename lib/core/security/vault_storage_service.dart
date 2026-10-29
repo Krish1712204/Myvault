@@ -23,6 +23,9 @@ class VaultStorageService {
   static const String _keySalt = 'myvault_salt';
   static const String _keyVerifier = 'myvault_verifier';
   static const String _keyKdfParams = 'myvault_kdf_params';
+  static const String _keyWrappedVekKek = 'myvault_wrapped_vek_kek';
+  static const String _keyWrappedVekBiometric = 'myvault_wrapped_vek_biometric';
+  static const String _keyBiometricWrappingKey = 'myvault_biometric_wrapping_key';
   static const String _keyBiometricEnabled = 'myvault_biometric_enabled';
   static const String _keyAutoLockDuration = 'myvault_autolock_duration';
 
@@ -32,16 +35,19 @@ class VaultStorageService {
     return val == 'true';
   }
 
-  /// Persists salt, verifier hash, and KDF metadata. Master password is NEVER stored.
+  /// Persists salt, verifier hash, KDF metadata, and KEK-wrapped VEK.
+  /// Master password is NEVER stored.
   Future<void> saveVaultCredentials({
     required List<int> salt,
     required List<int> verifierHash,
     required Map<String, dynamic> kdfParams,
+    required Map<String, String> wrappedVekKek,
   }) async {
     await _storage.write(key: _keyVaultCreated, value: 'true');
     await _storage.write(key: _keySalt, value: base64Encode(salt));
     await _storage.write(key: _keyVerifier, value: base64Encode(verifierHash));
     await _storage.write(key: _keyKdfParams, value: jsonEncode(kdfParams));
+    await _storage.write(key: _keyWrappedVekKek, value: jsonEncode(wrappedVekKek));
   }
 
   /// Retrieves stored salt bytes
@@ -75,6 +81,58 @@ class VaultStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Retrieves KEK-wrapped VEK
+  Future<Map<String, String>?> getWrappedVekKek() async {
+    final val = await _storage.read(key: _keyWrappedVekKek);
+    if (val == null || val.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(val) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Saves biometric-wrapped VEK and its hardware-protected wrapping key
+  Future<void> saveBiometricVek({
+    required List<int> biometricWrappingKey,
+    required Map<String, String> wrappedVekBiometric,
+  }) async {
+    await _storage.write(key: _keyBiometricWrappingKey, value: base64Encode(biometricWrappingKey));
+    await _storage.write(key: _keyWrappedVekBiometric, value: jsonEncode(wrappedVekBiometric));
+    await _storage.write(key: _keyBiometricEnabled, value: 'true');
+  }
+
+  /// Retrieves biometric wrapping key
+  Future<List<int>?> getBiometricWrappingKey() async {
+    final val = await _storage.read(key: _keyBiometricWrappingKey);
+    if (val == null || val.isEmpty) return null;
+    try {
+      return base64Decode(val);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Retrieves biometric-wrapped VEK
+  Future<Map<String, String>?> getWrappedVekBiometric() async {
+    final val = await _storage.read(key: _keyWrappedVekBiometric);
+    if (val == null || val.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(val) as Map<String, dynamic>;
+      return decoded.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Clears biometric key material
+  Future<void> clearBiometricKeys() async {
+    await _storage.delete(key: _keyBiometricWrappingKey);
+    await _storage.delete(key: _keyWrappedVekBiometric);
+    await _storage.write(key: _keyBiometricEnabled, value: 'false');
   }
 
   /// Retrieves biometric unlock preference

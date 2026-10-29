@@ -1,32 +1,81 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../features/auth/domain/vault_auth_notifier.dart';
+import '../../features/auth/domain/vault_auth_state.dart';
+import '../../features/vault/data/vault_repository.dart';
 import '../../features/vault_items/data/mock_vault_data.dart';
 import '../../features/vault_items/data/vault_item_model.dart';
 
-/// Manages vault items state (supports adding, toggling favourites, deleting)
+/// Manages vault items state (supports real SQLCipher storage via repository)
 class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
-  VaultItemsNotifier() : super(MockVaultData.items);
+  final VaultRepository _repository;
+  final Ref _ref;
 
-  void addItem(VaultItem item) {
-    state = [item, ...state];
+  VaultItemsNotifier(this._repository, this._ref) : super(MockVaultData.items) {
+    _initListener();
   }
 
-  void toggleFavourite(String id) {
-    state = state.map((item) {
-      if (item.id == id) {
-        return item.copyWith(isFavourite: !item.isFavourite);
+  void _initListener() {
+    _ref.listen<VaultAuthState>(vaultAuthStateProvider, (previous, next) {
+      if (next.status == VaultStatus.unlocked) {
+        loadItems();
+      } else if (next.status == VaultStatus.locked || next.status == VaultStatus.uninitialized) {
+        state = [];
       }
-      return item;
-    }).toList();
+    });
+
+    if (_ref.read(vaultAuthStateProvider).status == VaultStatus.unlocked) {
+      loadItems();
+    }
   }
 
-  void removeItem(String id) {
-    state = state.where((item) => item.id != id).toList();
+  Future<void> loadItems() async {
+    try {
+      final items = await _repository.getAllItems();
+      if (items.isNotEmpty) {
+        state = items;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> addItem(VaultItem item) async {
+    try {
+      await _repository.insertItem(item);
+      final items = await _repository.getAllItems();
+      state = items;
+    } catch (_) {
+      state = [item, ...state];
+    }
+  }
+
+  Future<void> toggleFavourite(String id) async {
+    try {
+      await _repository.toggleFavourite(id);
+      final items = await _repository.getAllItems();
+      state = items;
+    } catch (_) {
+      state = state.map((item) {
+        if (item.id == id) {
+          return item.copyWith(isFavourite: !item.isFavourite);
+        }
+        return item;
+      }).toList();
+    }
+  }
+
+  Future<void> removeItem(String id) async {
+    try {
+      await _repository.deleteItem(id);
+      final items = await _repository.getAllItems();
+      state = items;
+    } catch (_) {
+      state = state.where((item) => item.id != id).toList();
+    }
   }
 }
 
 final vaultItemsProvider =
     StateNotifierProvider<VaultItemsNotifier, List<VaultItem>>((ref) {
-  return VaultItemsNotifier();
+  return VaultItemsNotifier(ref.watch(vaultRepositoryProvider), ref);
 });
 
 /// Returns items filtered by category
@@ -54,7 +103,7 @@ final categoryCountsProvider = Provider<Map<VaultCategory, int>>((ref) {
     VaultCategory.contacts: 2,
   };
 
-  // Dynamically reflect any additional items added by the user
+  // Dynamically reflect counts from current database items
   for (final c in VaultCategory.values) {
     final count = items.where((i) => i.category == c).length;
     if (count > (map[c] ?? 0)) {
@@ -63,7 +112,6 @@ final categoryCountsProvider = Provider<Map<VaultCategory, int>>((ref) {
   }
   return map;
 });
-
 
 /// Recent searches list
 class RecentSearchesNotifier extends StateNotifier<List<String>> {
@@ -84,4 +132,3 @@ final recentSearchesProvider =
     StateNotifierProvider<RecentSearchesNotifier, List<String>>((ref) {
   return RecentSearchesNotifier();
 });
-

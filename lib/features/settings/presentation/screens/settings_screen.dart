@@ -138,11 +138,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         final storage = ref.read(vaultStorageServiceProvider);
                         final crypto = ref.read(vaultCryptoServiceProvider);
 
-                        // 1. Verify current password
+                        // 1. Verify current password and derive current KEK
                         final salt = await storage.getSalt();
                         final verifier = await storage.getVerifier();
+                        final currentWrappedVek = await storage.getWrappedVekKek();
 
-                        if (salt == null || verifier == null) {
+                        if (salt == null || verifier == null || currentWrappedVek == null) {
                           setDialogState(() {
                             isSaving = false;
                             errorMessage = 'Vault credentials missing.';
@@ -150,10 +151,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           return;
                         }
 
-                        final currentValid = await crypto.verifyMasterPassword(
-                          candidatePassword: currentPwd,
-                          storedSalt: salt,
-                          storedVerifierHash: verifier,
+                        final currentKekResult = await crypto.deriveMasterKeyAndVerifier(
+                          password: currentPwd,
+                          existingSalt: salt,
+                        );
+
+                        final currentValid = crypto.constantTimeEquals(
+                          currentKekResult.verifierHashBytes,
+                          verifier,
                         );
 
                         if (!currentValid) {
@@ -174,15 +179,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           return;
                         }
 
-                        // 3. Derive and save new password credentials
-                        final newResult = await crypto.deriveMasterKeyAndVerifier(password: newPwd);
-                        await storage.saveVaultCredentials(
-                          salt: newResult.saltBytes,
-                          verifierHash: newResult.verifierHashBytes,
-                          kdfParams: newResult.kdfParams,
+                        // 3. Unwrap VEK using current KEK
+                        final vek = await crypto.unwrapVek(
+                          wrappedVek: currentWrappedVek,
+                          wrappingKey: currentKekResult.derivedKeyBytes,
                         );
 
-                        ref.read(vaultSessionProvider).startSession(newResult.derivedKeyBytes);
+                        // 4. Derive new KEK and re-wrap VEK
+                        final newKekResult = await crypto.deriveMasterKeyAndVerifier(password: newPwd);
+                        final newWrappedVek = await crypto.wrapVek(
+                          vek: vek,
+                          wrappingKey: newKekResult.derivedKeyBytes,
+                        );
+
+                        // 5. Save updated credentials with new wrapped VEK
+                        await storage.saveVaultCredentials(
+                          salt: newKekResult.saltBytes,
+                          verifierHash: newKekResult.verifierHashBytes,
+                          kdfParams: newKekResult.kdfParams,
+                          wrappedVekKek: newWrappedVek,
+                        );
+
+                        ref.read(vaultSessionProvider).startSession(vek);
 
                         if (!dialogContext.mounted) return;
                         Navigator.pop(dialogContext);

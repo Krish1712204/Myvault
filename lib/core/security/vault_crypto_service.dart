@@ -46,6 +46,8 @@ class VaultCryptoService {
   static const int keyLength = 32; // 256 bits
 
   static const String verifierSaltTag = 'MyVault_Verifier_Tag_V1';
+  static const String dbKeyDerivationTag = 'MyVault_SQLCipher_Database_Key_V1';
+  static const String fileKeyDerivationTag = 'MyVault_File_Storage_AES256GCM_V1';
 
   final Argon2id _argon2id = Argon2id(
     parallelism: argon2Parallelism,
@@ -55,6 +57,7 @@ class VaultCryptoService {
   );
 
   final Sha256 _sha256 = Sha256();
+  final AesGcm _aesGcm = AesGcm.with256bits();
 
   /// Validates master password against all complexity criteria
   PasswordValidationResult validatePassword(String password, String confirmPassword) {
@@ -99,13 +102,19 @@ class VaultCryptoService {
     );
   }
 
-  /// Generates 32 cryptographically secure random bytes
-  List<int> generateSalt([int length = 32]) {
+  /// Generates cryptographically secure random bytes
+  List<int> generateRandomBytes([int length = 32]) {
     final random = Random.secure();
     return List<int>.generate(length, (_) => random.nextInt(256));
   }
 
-  /// Derives Master Key and Verifier Hash from Master Password and Salt using Argon2id
+  /// Generates 32-byte salt
+  List<int> generateSalt([int length = 32]) => generateRandomBytes(length);
+
+  /// Generates a fresh 256-bit Vault Encryption Key (VEK)
+  List<int> generateVek() => generateRandomBytes(32);
+
+  /// Derives Master Key (KEK) and Verifier Hash from Master Password and Salt using Argon2id
   Future<DerivedKeyResult> deriveMasterKeyAndVerifier({
     required String password,
     List<int>? existingSalt,
@@ -122,7 +131,6 @@ class VaultCryptoService {
     final derivedBytes = await derivedSecretKey.extractBytes();
 
     // Verifier is computed as SHA-256(derivedBytes + verifierSaltTag)
-    // This allows authenticating the user without keeping the master password in storage.
     final verifierInput = [...derivedBytes, ...utf8.encode(verifierSaltTag)];
     final verifierHash = await _sha256.hash(verifierInput);
 
@@ -140,7 +148,7 @@ class VaultCryptoService {
     );
   }
 
-  /// Verifies a candidate password against the stored salt and verifier hash in constant time
+  /// Verifies candidate password against stored salt and verifier hash in constant time
   Future<bool> verifyMasterPassword({
     required String candidatePassword,
     required List<int> storedSalt,
@@ -154,7 +162,90 @@ class VaultCryptoService {
     return constantTimeEquals(result.verifierHashBytes, storedVerifierHash);
   }
 
-  /// Constant-time comparison to prevent timing attacks
+  /// Wraps Vault Encryption Key (VEK) using AES-256-GCM authenticated encryption
+  Future<Map<String, String>> wrapVek({
+    required List<int> vek,
+    required List<int> wrappingKey,
+  }) async {
+    final secretKey = SecretKey(wrappingKey);
+    final nonce = generateRandomBytes(12); // 96-bit GCM nonce
+
+    final secretBox = await _aesGcm.encrypt(
+      vek,
+      secretKey: secretKey,
+      nonce: nonce,
+    );
+
+    return {
+      'iv': base64Encode(secretBox.nonce),
+      'ciphertext': base64Encode(secretBox.cipherText),
+      'tag': base64Encode(secretBox.mac.bytes),
+    };
+  }
+
+  /// Unwraps Vault Encryption Key (VEK) using AES-256-GCM. Fails if invalid or tampered.
+  Future<List<int>> unwrapVek({
+    required Map<String, String> wrappedVek,
+    required List<int> wrappingKey,
+  }) async {
+    final iv = base64Decode(wrappedVek['iv']!);
+    final ciphertext = base64Decode(wrappedVek['ciphertext']!);
+    final tag = base64Decode(wrappedVek['tag']!);
+
+    final secretKey = SecretKey(wrappingKey);
+    final secretBox = SecretBox(
+      ciphertext,
+      nonce: iv,
+      mac: Mac(tag),
+    );
+
+    return await _aesGcm.decrypt(
+      secretBox,
+      secretKey: secretKey,
+    );
+  }
+
+  /// Derives database key from VEK via HKDF-SHA256
+  Future<List<int>> deriveDatabaseKey(List<int> vek) async {
+    final hkdf = Hkdf(
+      hmac: Hmac.sha256(),
+      outputLength: 32,
+    );
+
+    final secretKey = SecretKey(vek);
+    final derived = await hkdf.deriveKey(
+      secretKey: secretKey,
+      info: utf8.encode(dbKeyDerivationTag),
+      nonce: const [],
+    );
+
+    return await derived.extractBytes();
+  }
+
+  /// Derives database key formatted as 64-char hexadecimal string for SQLCipher PRAGMA key
+  Future<String> deriveDatabaseKeyHex(List<int> vek) async {
+    final bytes = await deriveDatabaseKey(vek);
+    return bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  /// Derives file storage key from VEK via HKDF-SHA256
+  Future<List<int>> deriveFileStorageKey(List<int> vek) async {
+    final hkdf = Hkdf(
+      hmac: Hmac.sha256(),
+      outputLength: 32,
+    );
+
+    final secretKey = SecretKey(vek);
+    final derived = await hkdf.deriveKey(
+      secretKey: secretKey,
+      info: utf8.encode(fileKeyDerivationTag),
+      nonce: const [],
+    );
+
+    return await derived.extractBytes();
+  }
+
+  /// Constant-time comparison to prevent timing side channels
   bool constantTimeEquals(List<int> a, List<int> b) {
     if (a.length != b.length) return false;
     var result = 0;

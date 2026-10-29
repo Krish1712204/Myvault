@@ -1,11 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:myvault/core/database/vault_database.dart';
 import 'package:myvault/core/security/vault_crypto_service.dart';
 import 'package:myvault/core/security/vault_session.dart';
 import 'package:myvault/core/security/vault_storage_service.dart';
 import 'package:myvault/core/security/vault_biometric_service.dart';
+import 'package:myvault/core/storage/encrypted_file_service.dart';
 import 'package:myvault/features/auth/domain/vault_auth_notifier.dart';
 import 'package:myvault/features/auth/domain/vault_auth_state.dart';
+import 'package:myvault/features/vault/data/vault_repository.dart';
 
 /// Mock biometric service for unit testing auth notifier
 class MockBiometricService extends VaultBiometricService {
@@ -26,6 +30,11 @@ class MockBiometricService extends VaultBiometricService {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
 
   group('1. Password Validation & Complexity Rules', () {
     late VaultCryptoService crypto;
@@ -206,15 +215,17 @@ void main() {
       expect(await storage.hasVault(), isFalse);
     });
 
-    test('saveVaultCredentials stores salt, verifier and kdf metadata but NEVER password', () async {
+    test('saveVaultCredentials stores salt, verifier, kdf metadata and wrapped VEK but NEVER password', () async {
       final salt = [10, 20, 30, 40];
       final verifier = [50, 60, 70, 80];
       final kdfParams = {'algorithm': 'Argon2id', 'memory': 19456};
+      final wrappedVek = {'iv': 'iv123', 'ciphertext': 'cipher123', 'tag': 'tag123'};
 
       await storage.saveVaultCredentials(
         salt: salt,
         verifierHash: verifier,
         kdfParams: kdfParams,
+        wrappedVekKek: wrappedVek,
       );
 
       expect(await storage.hasVault(), isTrue);
@@ -223,6 +234,9 @@ void main() {
 
       final retrievedKdf = await storage.getKdfParams();
       expect(retrievedKdf?['algorithm'], equals('Argon2id'));
+
+      final retrievedVek = await storage.getWrappedVekKek();
+      expect(retrievedVek?['ciphertext'], equals('cipher123'));
 
       // Verify that no plaintext password key exists in storage
       const secureStorage = FlutterSecureStorage();
@@ -248,6 +262,9 @@ void main() {
     late VaultStorageService storage;
     late MockBiometricService biometric;
     late VaultSession session;
+    late VaultDatabase vaultDb;
+    late EncryptedFileService fileService;
+    late VaultRepository repository;
     late VaultAuthNotifier notifier;
 
     setUp(() async {
@@ -256,14 +273,23 @@ void main() {
       storage = VaultStorageService(storage: const FlutterSecureStorage());
       biometric = MockBiometricService(isSupported: true, authSuccess: true);
       session = VaultSession();
+      vaultDb = VaultDatabase(customFactory: databaseFactoryFfi);
+      fileService = EncryptedFileService();
+      repository = VaultRepository(vaultDb: vaultDb, fileService: fileService);
 
       notifier = VaultAuthNotifier(
         cryptoService: crypto,
         storageService: storage,
         biometricService: biometric,
         session: session,
+        vaultDb: vaultDb,
+        repository: repository,
       );
       await notifier.initialize();
+    });
+
+    tearDown(() async {
+      await vaultDb.close();
     });
 
     test('Initializes to uninitialized when no vault exists', () async {
@@ -285,57 +311,64 @@ void main() {
       expect(notifier.state.status, equals(VaultStatus.unlocked));
       expect(notifier.state.isVaultCreated, isTrue);
       expect(session.isActive, isTrue);
+      expect(vaultDb.isOpen, isTrue);
     });
 
-    test('lockVault explicitly locks and wipes session', () async {
+    test('lockVault explicitly locks, wipes session and closes database', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
       expect(notifier.state.status, equals(VaultStatus.unlocked));
 
-      notifier.lockVault();
+      await notifier.lockVault();
 
       expect(notifier.state.status, equals(VaultStatus.locked));
       expect(notifier.state.isUnlocked, isFalse);
       expect(session.isActive, isFalse);
+      expect(vaultDb.isOpen, isFalse);
     });
 
     test('unlockWithPassword succeeds with correct password', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
-      notifier.lockVault();
+      await notifier.lockVault();
       expect(notifier.state.status, equals(VaultStatus.locked));
 
       final success = await notifier.unlockWithPassword('StrongVault#Pass1');
       expect(success, isTrue);
       expect(notifier.state.status, equals(VaultStatus.unlocked));
       expect(session.isActive, isTrue);
+      expect(vaultDb.isOpen, isTrue);
     });
 
     test('unlockWithPassword fails with wrong password and leaves vault locked', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
-      notifier.lockVault();
+      await notifier.lockVault();
 
       final success = await notifier.unlockWithPassword('WrongVault#Pass9');
       expect(success, isFalse);
       expect(notifier.state.status, equals(VaultStatus.locked));
       expect(notifier.state.errorMessage, contains('Incorrect master password'));
       expect(session.isActive, isFalse);
+      expect(vaultDb.isOpen, isFalse);
     });
 
     test('checkAutoLock locks vault when set to Immediately on backgrounding', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
       await notifier.setAutoLockDuration('Immediately');
 
-      notifier.checkAutoLock(isBackgrounding: true);
+      await notifier.checkAutoLock(isBackgrounding: true);
 
       expect(notifier.state.status, equals(VaultStatus.locked));
+      expect(vaultDb.isOpen, isFalse);
     });
 
     test('Biometric unlock unlocks vault when enabled', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
-      notifier.lockVault();
+      await notifier.lockVault();
 
       final success = await notifier.unlockWithBiometrics();
       expect(success, isTrue);
       expect(notifier.state.status, equals(VaultStatus.unlocked));
+      expect(session.isActive, isTrue);
+      expect(vaultDb.isOpen, isTrue);
     });
   });
 }
