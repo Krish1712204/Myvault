@@ -47,6 +47,10 @@ secrets/
 sensitive_test_data/
 test_vault/
 
+# Build artifacts & packages
+*.apk
+*.aab
+
 # IDE and Editor files
 .idea/
 *.iml
