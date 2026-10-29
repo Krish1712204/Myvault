@@ -14,3 +14,4 @@ void main() {
     expect(find.text('Personal Digital Vault'), findsOneWidget);
   });
 }
+

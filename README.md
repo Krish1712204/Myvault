@@ -9,10 +9,11 @@ MyVault is a personal digital vault Android application built with Flutter, desi
 ```
 Myvault/
 ├── .vscode/               # VS Code debugging & extension configuration
+├── android/               # Native Android project wrapper (Application ID: com.personalvault.myvault)
 ├── lib/
 │   ├── core/              # Core application configurations, themes, constants
 │   │   ├── constants/     # App colors (navy text, white surfaces, blue actions) & spacing tokens
-│   │   └── theme/         # Material 3 ThemeData with rounded cards
+│   │   └── theme/         # Material 3 ThemeData with rounded cards (16px)
 │   ├── features/          # Feature-first modular business logic & UI
 │   │   └── vault/         # Vault domain, screens, and components
 │   ├── shared/            # Shared cross-cutting UI widgets and utilities
@@ -28,100 +29,47 @@ Myvault/
 
 ## Environment Status & Verification
 
-An automated check on this Windows workstation revealed the following status:
-
 | Component | Status | Details |
 | :--- | :--- | :--- |
 | **Git** | Verified Available | `git version 2.55.0.windows.3` |
-| **Flutter SDK** | Not Installed | Missing from `PATH` |
-| **Dart SDK** | Not Installed | Included with Flutter SDK |
-| **Java JDK** | Not Installed | `java` binary not found |
-| **Android SDK / Studio** | Not Installed | `adb` binary not found |
-| **Connected Android Devices** | Not Detected | Requires Android SDK Platform-Tools (`adb`) |
+| **Flutter SDK** | Verified Available | `Flutter 3.47.8 • channel stable` (`C:\src\flutter`) |
+| **Dart SDK** | Verified Available | `Dart 3.13.7` |
+| **Android Studio** | Installed | Located at `C:\Program Files\Android\Android Studio` |
+| **Java JDK (bundled JBR)**| Available | OpenJDK 25 (bundled with Android Studio) |
+| **Android SDK / adb** | Pending First Studio Launch | Needs Android Studio First-Run Setup Wizard to download SDK |
+| **Connected Android Device**| Pending ADB & USB connection| Ready once Android SDK Platform-Tools are present |
 
 ---
 
-## Windows Installation Guide
+## Final Steps to Run on Physical Android Phone
 
-Follow these verified steps to install the missing development toolchain on Windows:
+### Step 1: Open Android Studio Once to Download Android SDK
+1. Open **Android Studio** from your Windows Start Menu.
+2. Complete the setup wizard (choose **Standard** setup).
+3. This downloads the Android SDK, Android SDK Platform-Tools (which includes `adb.exe`), and build tools to `%LOCALAPPDATA%\Android\Sdk`.
+4. Run `flutter doctor --android-licenses` in terminal and accept the licenses by typing `y`.
 
-### 1. Install Java Development Kit (JDK 17 LTS)
-Flutter for Android requires OpenJDK 17.
+### Step 2: Connect Your Android Phone
+1. On your phone: **Settings > About Phone > Tap 'Build Number' 7 times**.
+2. Go to **Settings > System > Developer Options > Enable USB Debugging**.
+3. Plug the phone into your PC via USB and accept the authorization prompt on the phone screen.
 
-1. Download **Eclipse Temurin OpenJDK 17 (LTS)** installer:
-   - Official URL: [https://adoptium.net/temurin/releases/?version=17](https://adoptium.net/temurin/releases/?version=17)
-   - Or install via winget (in an elevated PowerShell terminal):
-     ```powershell
-     winget install EclipseAdoptium.Temurin.17.JDK
-     ```
-2. Verify `JAVA_HOME` environment variable points to the JDK directory (e.g., `C:\Program Files\Eclipse Adoptium\jdk-17.x.x-hotspot`).
-3. Add `%JAVA_HOME%\bin` to your system `PATH`.
-
-### 2. Install Android Studio & Android SDK
-1. Download **Android Studio Ladybug or later**:
-   - URL: [https://developer.android.com/studio](https://developer.android.com/studio)
-   - Or install via winget:
-     ```powershell
-     winget install Google.AndroidStudio
-     ```
-2. Open Android Studio, navigate through the Setup Wizard, and install:
-   - Android SDK (API 34 or 35)
-   - Android SDK Platform-Tools (contains `adb.exe`)
-   - Android SDK Command-line Tools (`Tools > SDK Manager > SDK Tools > Android SDK Command-line Tools (latest)`)
-3. Set user environment variables:
-   - `ANDROID_HOME`: `%LOCALAPPDATA%\Android\Sdk`
-   - Add to `PATH`:
-     - `%LOCALAPPDATA%\Android\Sdk\platform-tools`
-     - `%LOCALAPPDATA%\Android\Sdk\cmdline-tools\latest\bin`
-
-### 3. Install Flutter SDK
-1. Download the latest stable Flutter Windows bundle:
-   - URL: [https://docs.flutter.dev/get-started/install/windows/mobile](https://docs.flutter.dev/get-started/install/windows/mobile)
-   - Or clone via Git into `C:\src\flutter`:
-     ```powershell
-     git clone https://github.com/flutter/flutter.git -b stable C:\src\flutter
-     ```
-2. Add `C:\src\flutter\bin` to your User `PATH` environment variable.
-3. Restart your terminal or IDE so the updated `PATH` takes effect.
-
-### 4. Enable USB Debugging on Physical Android Phone
-1. On your Android phone, go to **Settings > About Phone**.
-2. Tap **Build Number** 7 times to enable Developer Options.
-3. Go to **Settings > System > Developer Options**.
-4. Enable **USB Debugging**.
-5. Connect your phone via USB cable to this PC.
-6. Accept the "Allow USB debugging?" prompt on your phone (check "Always allow from this computer").
+### Step 3: Run the Application
+In your terminal or VS Code:
+```powershell
+flutter devices
+flutter run
+```
 
 ---
 
-## Project Verification Commands
+## Verification & Testing Commands
 
-Once the above dependencies are installed:
-
-### Step 1: Run Flutter Doctor
-Run to verify all dependencies and accept Android licenses:
-```powershell
-flutter doctor -v
-flutter doctor --android-licenses
-```
-
-### Step 2: Generate Android Platform Bindings (Application ID `com.personalvault.myvault`)
-Generate the native Android wrapper around this workspace:
-```powershell
-flutter create . --org com.personalvault --project-name myvault
-```
-
-### Step 3: Fetch Packages & Run Tests
+To run static analysis and tests:
 ```powershell
 flutter pub get
 flutter analyze
 flutter test
-```
-
-### Step 4: Verify Device & Run on Physical Android Phone
-```powershell
-flutter devices
-flutter run
 ```
 
 ---

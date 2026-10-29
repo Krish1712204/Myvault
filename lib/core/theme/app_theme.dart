@@ -57,7 +57,7 @@ class AppTheme {
           fontWeight: FontWeight.normal,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.cardSurface,
         elevation: 1,
         shadowColor: AppColors.textPrimaryNavy.withAlpha(20),
@@ -121,3 +121,4 @@ class AppTheme {
     );
   }
 }
+
