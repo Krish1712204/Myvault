@@ -63,6 +63,7 @@ class EncryptedFileService {
     required String originalFileName,
     required List<int> fileStorageKey,
     String? mimeType,
+    String? customRelativePath,
   }) async {
     final secretKey = SecretKey(fileStorageKey);
     final random = Random.secure();
@@ -74,9 +75,14 @@ class EncryptedFileService {
       nonce: nonce,
     );
 
+    final sanitizedName = p.basename(originalFileName);
+    final sanitizedRelative = customRelativePath != null && customRelativePath.trim().isNotEmpty
+        ? p.basename(customRelativePath.trim())
+        : null;
+
     final fileId = '${DateTime.now().millisecondsSinceEpoch}_${random.nextInt(1000000)}';
-    final extension = p.extension(originalFileName).toLowerCase();
-    final relativePath = '$fileId.enc';
+    final extension = p.extension(sanitizedName).toLowerCase();
+    final relativePath = sanitizedRelative ?? '$fileId.enc';
 
     final filesDir = await _getFilesDirectory();
     final targetFile = File(p.join(filesDir.path, relativePath));
@@ -92,7 +98,7 @@ class EncryptedFileService {
 
     return StoredFileResult(
       relativePath: relativePath,
-      fileName: originalFileName,
+      fileName: sanitizedName,
       fileSize: fileBytes.length,
       mimeType: mimeType ?? _guessMimeType(extension),
       fileExtension: extension,

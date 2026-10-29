@@ -107,15 +107,90 @@ Before returning any plaintext or rendering a preview:
 
 ---
 
-## 4. Phase 7 Portable Encrypted Backup Roadmap
+## 4. Portable Encrypted Backup & Restore Specification (Phase 7 Implemented)
 
-In Phase 7, backup and restore will be implemented as follows:
-1. **Archive Generation**:
-   The active `myvault_encrypted.db` file and all files in `vault_encrypted_files/` are bundled into a tar/zip container.
-2. **Backup Encryption Key (BEK)**:
-   A dedicated BEK is derived from a user-specified backup password or 24-word recovery seed using Argon2id with independent salt.
-3. **Encrypted Container**:
-   The container is encrypted with AES-256-GCM and formatted with metadata headers indicating timestamp, item counts, and schema version.
-4. **Portability**:
-   The exported file (`myvault_backup_<date>.myvault`) can be saved to user-selected destinations (USB, local storage, or shared safely) without exposing the master password or device-bound keystore credentials.
+MyVault Phase 7 implements a single-file portable container format (`.myvault`) with authenticated header metadata, AEAD payload encryption, and transactional rollback recovery.
+
+### 4.1 Container Binary Layout: `MYVAULT_B_V1`
+
+```
++--------------------------------------------------------------------------------------------------+
+| Magic Bytes (12B) | Header Len (4B) | Unencrypted JSON Header (NB) | AES-256-GCM Ciphertext (MB) |
+|   "MYVAULT_B_V1"  |  Big-Endian U32 |   Format metadata, Salt, MAC |   Encrypted JSON Payload    |
++--------------------------------------------------------------------------------------------------+
+```
+
+| Offset | Length | Field | Description |
+|:---|:---|:---|:---|
+| `0x00` | 12 bytes | `Magic Bytes` | ASCII: `MYVAULT_B_V1` (Portable backup container format identifier) |
+| `0x0C` | 4 bytes | `Header Length` | 32-bit big-endian unsigned integer specifying header JSON length $N$ |
+| `0x10` | $N$ bytes | `Header JSON` | UTF-8 JSON containing format version, Argon2id parameters, salt, nonce, and MAC |
+| `0x10 + N` | $M$ bytes | `Ciphertext` | AES-256-GCM encrypted payload containing database records and file attachments |
+
+### 4.2 Header Metadata Specification
+The unencrypted header allows safe inspection of the backup file before requiring the user's passphrase:
+```json
+{
+  "format": "MYVAULT_BACKUP",
+  "version": 1,
+  "app_version": "1.0.0",
+  "created_at": 1729000000000,
+  "kdf": "Argon2id",
+  "kdf_params": {
+    "memory": 19456,
+    "iterations": 2,
+    "parallelism": 1,
+    "key_length": 32,
+    "salt": "<Base64 32-byte salt>"
+  },
+  "cipher": "AES-256-GCM",
+  "nonce": "<Base64 12-byte IV>",
+  "mac": "<Base64 16-byte GCM authentication tag>",
+  "item_count": 42,
+  "file_count": 5
+}
+```
+
+### 4.3 Encrypted Payload Structure
+The decrypted payload contains all relational database tables and re-encoded attachment binaries with SHA-256 checksums:
+```json
+{
+  "version": 1,
+  "timestamp": 1729000000000,
+  "vault_items": [...],
+  "password_entries": [...],
+  "identity_entries": [...],
+  "document_entries": [...],
+  "notes": [...],
+  "contacts": [...],
+  "tags": [...],
+  "item_tags": [...],
+  "files": [
+    {
+      "file_name": "aadhaar.pdf",
+      "relative_path": "aadhaar.pdf",
+      "mime_type": "application/pdf",
+      "size": 1048576,
+      "sha256": "3a7b...",
+      "data_b64": "<Base64 encrypted attachment data>"
+    }
+  ]
+}
+```
+
+### 4.4 Atomic Restoration & Rollback Recovery Point
+1. **Pre-Restoration Validation**:
+   - Signature check verifies `MYVAULT_B_V1` magic bytes.
+   - Version check ensures compatibility (`version <= 1`).
+   - AEAD MAC tag authentication ensures payload has not been modified or corrupted.
+   - Path-traversal checks sanitize all file paths via `p.basename()`, rejecting relative components (`..`) or absolute paths.
+   - SHA-256 verification confirms each decrypted file attachment matches its checksum.
+2. **Confirmation Enforcement**:
+   - If the vault currently contains items and the user has not confirmed replacement (`replaceExisting: true`), restoration is aborted.
+3. **Atomic Rollback Architecture**:
+   - An in-memory recovery snapshot of all existing table rows is captured.
+   - Database operations execute inside a single transaction (`db.transaction()`).
+   - Restored file attachments are re-encrypted with the target device's active VEK/File Storage Key.
+   - If an error occurs at any point (e.g. disk full, corrupted attachment), all newly written files are deleted from storage and original database rows are restored from the in-memory recovery snapshot.
+
 

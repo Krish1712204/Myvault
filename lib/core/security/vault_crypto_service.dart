@@ -245,6 +245,61 @@ class VaultCryptoService {
     return await derived.extractBytes();
   }
 
+  /// Derives Backup Encryption Key (BEK) from user backup passphrase and salt via Argon2id
+  Future<List<int>> deriveBackupKey({
+    required String passphrase,
+    required List<int> salt,
+    int memory = argon2Memory,
+    int iterations = argon2Iterations,
+    int parallelism = argon2Parallelism,
+  }) async {
+    final kdf = Argon2id(
+      parallelism: parallelism,
+      memory: memory,
+      iterations: iterations,
+      hashLength: keyLength,
+    );
+    final secretKey = SecretKey(utf8.encode(passphrase));
+    final derived = await kdf.deriveKey(
+      secretKey: secretKey,
+      nonce: salt,
+    );
+    return await derived.extractBytes();
+  }
+
+  /// Encrypts backup payload bytes with AES-256-GCM
+  Future<SecretBox> encryptBackupPayload({
+    required List<int> plaintext,
+    required List<int> backupKey,
+    required List<int> nonce,
+  }) async {
+    final secretKey = SecretKey(backupKey);
+    return await _aesGcm.encrypt(
+      plaintext,
+      secretKey: secretKey,
+      nonce: nonce,
+    );
+  }
+
+  /// Decrypts and authenticates backup payload bytes with AES-256-GCM
+  Future<List<int>> decryptBackupPayload({
+    required List<int> ciphertext,
+    required List<int> nonce,
+    required List<int> mac,
+    required List<int> backupKey,
+  }) async {
+    final secretKey = SecretKey(backupKey);
+    final secretBox = SecretBox(
+      ciphertext,
+      nonce: nonce,
+      mac: Mac(mac),
+    );
+    return await _aesGcm.decrypt(
+      secretBox,
+      secretKey: secretKey,
+    );
+  }
+
   /// Constant-time comparison to prevent timing side channels
   bool constantTimeEquals(List<int> a, List<int> b) {
     if (a.length != b.length) return false;

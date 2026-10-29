@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
@@ -79,7 +78,7 @@ void main() {
         updatedAt: 1729000000000,
       );
 
-      final note = NoteEntry(
+      const note = NoteEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         content: multilineText,
@@ -104,7 +103,7 @@ void main() {
 
     test('Updates existing note content, tags, and category', () async {
       const itemId = 'note_002';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Ideas',
         subtitle: 'Initial draft',
@@ -113,7 +112,7 @@ void main() {
         subcategory: 'Ideas',
         tags: 'draft',
       );
-      final note = NoteEntry(
+      const note = NoteEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         content: 'Initial draft',
@@ -129,7 +128,7 @@ void main() {
         tags: 'ideas,approved',
         isFavourite: true,
       );
-      final updatedNote = NoteEntry(
+      const updatedNote = NoteEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         content: updatedContent,
@@ -148,14 +147,14 @@ void main() {
 
     test('Deletes note and cascades from detail table', () async {
       const itemId = 'note_003';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Scratch Note',
         subtitle: 'Temporary',
         category: VaultCategory.notes,
         details: 'Temporary text',
       );
-      final note = NoteEntry(
+      const note = NoteEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         content: 'Temporary text',
@@ -175,7 +174,7 @@ void main() {
   group('Phase 6 — Contacts Module CRUD & Persistence', () {
     test('Creates and retrieves full private contact profile', () async {
       const itemId = 'cnt_001';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Prathamesh Shelar',
         subtitle: 'Senior Engineer · Security Team',
@@ -194,7 +193,7 @@ void main() {
         isFavourite: true,
       );
 
-      final contact = ContactEntry(
+      const contact = ContactEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         phoneNumber: '+91 98765 43210',
@@ -233,14 +232,14 @@ void main() {
 
     test('Updates contact profile fields and maintains consistency', () async {
       const itemId = 'cnt_002';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Amit Sharma',
         subtitle: '+91 98000 11111',
         category: VaultCategory.contacts,
         phoneNumber: '+91 98000 11111',
       );
-      final contact = ContactEntry(
+      const contact = ContactEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         phoneNumber: '+91 98000 11111',
@@ -258,7 +257,7 @@ void main() {
         tags: 'management,fintech',
         isFavourite: true,
       );
-      final updatedContact = ContactEntry(
+      const updatedContact = ContactEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         phoneNumber: '+91 98000 11111',
@@ -281,14 +280,14 @@ void main() {
 
     test('Deletes contact completely without leaving orphan rows', () async {
       const itemId = 'cnt_003';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Temp Contact',
         subtitle: '+91 00000 00000',
         category: VaultCategory.contacts,
         phoneNumber: '+91 00000 00000',
       );
-      final contact = ContactEntry(
+      const contact = ContactEntry(
         id: 'entry_$itemId',
         itemId: itemId,
         phoneNumber: '+91 00000 00000',
@@ -615,3 +614,4 @@ void main() {
     });
   });
 }
+

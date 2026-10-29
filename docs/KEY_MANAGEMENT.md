@@ -141,3 +141,48 @@ This document specifies the cryptographic key lifecycle, storage mechanisms, and
 | Database full encryption | Verified | SQLCipher AES-256-CBC page encryption |
 | File storage authenticated encryption | Verified | Unique nonce per file, `MYVAULT_F_V1` header |
 | Zeroization on lock | Verified | RAM buffers overwritten with zeros |
+| Portable backup encryption key | Verified | Independent Argon2id BEK derivation |
+| Hardware Keystore independence | Verified | Backups restored on new devices without Keystore dependence |
+| Atomic rollback safety on restore | Verified | In-memory transaction snapshot rollback on failure |
+
+---
+
+## 5. Encrypted Backup & Restore Key Architecture (Phase 7)
+
+MyVault implements a portable, authenticated backup and restore mechanism that enables full cross-device migration without depending on Android Keystore hardware-bound keys:
+
+```
++-------------------------------------------------------------+
+|                   Backup Passphrase                         |
+|            (User-entered at export & import)                |
++-------------------------------------------------------------+
+                               |
+              Argon2id KDF (Random Salt: 32 bytes)
+              Parameters: Memory 19 MiB, Iterations 2
+                               v
++-------------------------------------------------------------+
+|             Backup Encryption Key (BEK)                     |
+|                   256-bit AES Key                           |
++-------------------------------------------------------------+
+                               |
+                               +-------------------------------------+
+                               |                                     |
+                               v                                     v
++-----------------------------------------------+   +-----------------------------------------------+
+|      Backup Export (AES-256-GCM)              |   |       Backup Import (AEAD Decrypt)            |
+| - Plaintext JSON payload (records + files)    |   | - Authenticates 128-bit GCM MAC tag           |
+| - Encrypted using BEK + 96-bit random nonce   |   | - Decrypts payload only if MAC is valid       |
+| - Zero master keys or Keystore keys exported  |   | - Re-encrypts attachments with target VEK     |
++-----------------------------------------------+   +-----------------------------------------------+
+```
+
+### 5.1 Backup Key Principles & Invariants:
+1. **Keystore Independence**: The Backup Encryption Key (`BEK`) is derived purely from the user's chosen backup passphrase and a secure random 32-byte salt using Argon2id. It has **no dependency** on the Android Keystore, StrongBox, or TEE. This ensures backups can be restored on another device or after a factory reset.
+2. **Strict Cryptographic Domain Separation**:
+   - Master Password, KEK, plaintext VEK, Database Key, and Biometric Wrapping Key (`BWK`) are **NEVER** included in backup files.
+   - The backup passphrase is completely decoupled from the master password (can be identical or different at user discretion).
+3. **AEAD Authenticated Encryption**: The entire backup payload (JSON structure containing records, tags, and decrypted attachment blobs with SHA-256 integrity hashes) is encrypted with AES-256-GCM. Any byte-level modification or incorrect passphrase fails authentication immediately.
+4. **Target Device Re-Encryption**: During restoration, file attachments are re-encrypted using the target device's active VEK and local `FileStorageKey`. Restored database records are written directly into the target device's SQLCipher database within an atomic transaction.
+5. **Atomic Rollback Point**: Before writing any restored records, an in-memory recovery snapshot is recorded. If any error occurs during restoration or attachment processing, all newly created files are deleted and previous database rows are atomically re-inserted.
+6. **Memory Hygiene**: Ephemeral BEK instances and in-memory decrypted buffers are released and zeroized promptly upon completion.
+
