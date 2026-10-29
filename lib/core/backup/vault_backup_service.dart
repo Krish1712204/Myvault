@@ -169,6 +169,14 @@ class VaultBackupService {
   static const String containerMagic = 'MYVAULT_B_V1'; // 12 bytes
   static const int currentBackupVersion = 1;
 
+  // Strict Argon2id resource bounds to prevent Denial-of-Service / Memory exhaustion attacks
+  static const int minArgon2Memory = 8192; // 8 MiB minimum
+  static const int maxArgon2Memory = 65536; // 64 MiB maximum safe limit on mobile
+  static const int minArgon2Iterations = 1;
+  static const int maxArgon2Iterations = 10;
+  static const int minArgon2Parallelism = 1;
+  static const int maxArgon2Parallelism = 4;
+
   final VaultDatabase _vaultDb;
   final EncryptedFileService _fileService;
   final VaultCryptoService _cryptoService;
@@ -407,13 +415,52 @@ class VaultBackupService {
       throw UnsupportedBackupVersionException('Backup version $version is not supported by this version of MyVault.');
     }
 
-    final kdfParams = header['kdf_params'] as Map<String, dynamic>;
-    final salt = base64Decode(kdfParams['salt'] as String);
+    final kdfParams = header['kdf_params'] as Map<String, dynamic>?;
+    if (kdfParams == null) {
+      throw const InvalidBackupFormatException('Missing KDF parameters in backup header.');
+    }
+    final saltStr = kdfParams['salt'] as String?;
+    if (saltStr == null) {
+      throw const InvalidBackupFormatException('Missing salt in backup header.');
+    }
+    final salt = base64Decode(saltStr);
+    if (salt.length != 32) {
+      throw const InvalidBackupFormatException('Invalid salt length in backup header (must be 32 bytes).');
+    }
+
     final memory = kdfParams['memory'] as int? ?? VaultCryptoService.argon2Memory;
+    if (memory < minArgon2Memory || memory > maxArgon2Memory) {
+      throw InvalidBackupFormatException(
+          'Argon2id memory parameter ($memory KiB) exceeds safety limits ($minArgon2Memory-$maxArgon2Memory KiB).');
+    }
+
     final iterations = kdfParams['iterations'] as int? ?? VaultCryptoService.argon2Iterations;
+    if (iterations < minArgon2Iterations || iterations > maxArgon2Iterations) {
+      throw InvalidBackupFormatException(
+          'Argon2id iterations parameter ($iterations) exceeds safety limits ($minArgon2Iterations-$maxArgon2Iterations).');
+    }
+
     final parallelism = kdfParams['parallelism'] as int? ?? VaultCryptoService.argon2Parallelism;
-    final nonce = base64Decode(header['nonce'] as String);
-    final mac = base64Decode(header['mac'] as String);
+    if (parallelism < minArgon2Parallelism || parallelism > maxArgon2Parallelism) {
+      throw InvalidBackupFormatException(
+          'Argon2id parallelism parameter ($parallelism) exceeds safety limits ($minArgon2Parallelism-$maxArgon2Parallelism).');
+    }
+
+    final nonceStr = header['nonce'] as String?;
+    final macStr = header['mac'] as String?;
+    if (nonceStr == null || macStr == null) {
+      throw const InvalidBackupFormatException('Missing cryptographic nonce or MAC in backup header.');
+    }
+
+    final nonce = base64Decode(nonceStr);
+    final mac = base64Decode(macStr);
+
+    if (nonce.length != 12) {
+      throw const InvalidBackupFormatException('Invalid AES-GCM nonce length in backup header (must be 12 bytes).');
+    }
+    if (mac.length != 16) {
+      throw const InvalidBackupFormatException('Invalid AES-GCM MAC tag length in backup header (must be 16 bytes).');
+    }
 
     final ciphertext = fileBytes.sublist(16 + headerLen);
 

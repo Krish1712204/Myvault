@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/vault_database.dart';
+import '../../../core/security/clipboard_service.dart';
 import '../../../core/security/vault_biometric_service.dart';
 import '../../../core/security/vault_crypto_service.dart';
 import '../../../core/security/vault_session.dart';
@@ -46,6 +47,7 @@ class VaultAuthNotifier extends StateNotifier<VaultAuthState> {
   final VaultSession _session;
   final VaultDatabase _vaultDb;
   final VaultRepository _repository;
+  final EncryptedFileService? _fileService;
 
   VaultAuthNotifier({
     required VaultCryptoService cryptoService,
@@ -54,12 +56,14 @@ class VaultAuthNotifier extends StateNotifier<VaultAuthState> {
     required VaultSession session,
     required VaultDatabase vaultDb,
     required VaultRepository repository,
+    EncryptedFileService? fileService,
   })  : _cryptoService = cryptoService,
         _storageService = storageService,
         _biometricService = biometricService,
         _session = session,
         _vaultDb = vaultDb,
         _repository = repository,
+        _fileService = fileService,
         super(const VaultAuthState()) {
     initialize();
   }
@@ -69,6 +73,8 @@ class VaultAuthNotifier extends StateNotifier<VaultAuthState> {
     state = state.copyWith(isLoading: true);
 
     try {
+      await ClipboardService.clearClipboard();
+      await _fileService?.clearTemporaryPreviews();
       final hasVault = await _storageService.hasVault();
       final canBiometrics = await _biometricService.canAuthenticate();
       final biometricEnabled = await _storageService.isBiometricEnabled();
@@ -302,6 +308,8 @@ class VaultAuthNotifier extends StateNotifier<VaultAuthState> {
   /// Locks the vault, closes encrypted database, and zeroizes memory
   Future<void> lockVault() async {
     _session.clear();
+    await ClipboardService.clearClipboard();
+    await _fileService?.clearTemporaryPreviews();
     state = state.copyWith(
       status: VaultStatus.locked,
       clearError: true,
@@ -371,5 +379,6 @@ final vaultAuthStateProvider =
     session: ref.watch(vaultSessionProvider),
     vaultDb: ref.watch(vaultDatabaseProvider),
     repository: ref.watch(vaultRepositoryProvider),
+    fileService: ref.watch(encryptedFileServiceProvider),
   );
 });
