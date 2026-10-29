@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
-import '../../../../shared/state/vault_state_provider.dart';
+import '../../domain/vault_auth_notifier.dart';
 
 class CreateVaultScreen extends ConsumerStatefulWidget {
   const CreateVaultScreen({super.key});
@@ -25,6 +25,9 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
   bool get _hasNumber => _passwordController.text.contains(RegExp(r'[0-9]'));
   bool get _hasSpecialChar =>
       _passwordController.text.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+  bool get _passwordsMatch =>
+      _passwordController.text.isNotEmpty &&
+      _passwordController.text == _confirmPasswordController.text;
 
   @override
   void dispose() {
@@ -33,19 +36,44 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
     super.dispose();
   }
 
-  void _handleCreateVault() {
-    ref.read(authStateProvider.notifier).createVault(_passwordController.text);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vault created successfully! Welcome to MyVault.'),
-        backgroundColor: AppColors.success,
-      ),
+  Future<void> _handleCreateVault() async {
+    FocusScope.of(context).unfocus();
+    final authNotifier = ref.read(vaultAuthStateProvider.notifier);
+
+    final success = await authNotifier.createVault(
+      _passwordController.text,
+      _confirmPasswordController.text,
     );
-    context.go('/');
+
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vault created successfully! Welcome to MyVault.'),
+          backgroundColor: AppColors.success,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      context.go('/');
+    } else {
+      final error = ref.read(vaultAuthStateProvider).errorMessage ??
+          'Could not create vault. Please ensure all security requirements are satisfied.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(vaultAuthStateProvider);
+    final isLoading = authState.isLoading;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -100,6 +128,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
+                enabled: !isLoading,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: 'Enter master password',
@@ -127,6 +156,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
               TextField(
                 controller: _confirmPasswordController,
                 obscureText: _obscureConfirmPassword,
+                enabled: !isLoading,
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: 'Confirm master password',
@@ -151,12 +181,14 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
               _buildCriteriaItem('Include lowercase letter', _hasLowercase),
               _buildCriteriaItem('Include a number', _hasNumber),
               _buildCriteriaItem('Include a special character', _hasSpecialChar),
+              if (_confirmPasswordController.text.isNotEmpty)
+                _buildCriteriaItem('Passwords match', _passwordsMatch),
               const SizedBox(height: AppSpacing.xl),
               // Create Vault Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _handleCreateVault,
+                  onPressed: isLoading ? null : _handleCreateVault,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     padding: const EdgeInsets.symmetric(vertical: 18),
@@ -164,21 +196,30 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Create Vault',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                  child: isLoading
+                      ? const SizedBox(
+                          height: 22,
+                          width: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Create Vault',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                          ],
                         ),
-                      ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-                    ],
-                  ),
                 ),
               ),
               const SizedBox(height: AppSpacing.xl),
@@ -213,4 +254,3 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
     );
   }
 }
-

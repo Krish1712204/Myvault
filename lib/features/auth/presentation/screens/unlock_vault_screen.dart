@@ -3,52 +3,221 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
-import '../../../../shared/state/vault_state_provider.dart';
+import '../../domain/vault_auth_notifier.dart';
 import '../widgets/biometric_sensor_widget.dart';
 import '../widgets/vault_shield_logo.dart';
 
-class UnlockVaultScreen extends ConsumerWidget {
+class UnlockVaultScreen extends ConsumerStatefulWidget {
   const UnlockVaultScreen({super.key});
 
-  void _unlock(BuildContext context, WidgetRef ref) {
-    ref.read(authStateProvider.notifier).unlockVault();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vault unlocked successfully!'),
-        backgroundColor: AppColors.primary,
-        duration: Duration(seconds: 2),
-      ),
-    );
-    context.go('/');
+  @override
+  ConsumerState<UnlockVaultScreen> createState() => _UnlockVaultScreenState();
+}
+
+class _UnlockVaultScreenState extends ConsumerState<UnlockVaultScreen> {
+  Future<void> _handleBiometricUnlock() async {
+    final authState = ref.read(vaultAuthStateProvider);
+    final authNotifier = ref.read(vaultAuthStateProvider.notifier);
+
+    if (!authState.isBiometricAvailable || !authState.isBiometricEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Biometric unlock is not enabled or not supported on this device. Please enter your master password.',
+          ),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final success = await authNotifier.unlockWithBiometrics();
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Vault unlocked successfully!'),
+          backgroundColor: AppColors.primary,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      context.go('/');
+    }
   }
 
-  void _showPasswordDialog(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
+  void _showPasswordDialog() {
+    final passwordController = TextEditingController();
+    bool obscure = true;
+    String? dialogError;
+    bool isAuthenticating = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isAuthenticating,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text(
+              'Enter Master Password',
+              style: TextStyle(
+                color: AppColors.textPrimaryNavy,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: passwordController,
+                  obscureText: obscure,
+                  autofocus: true,
+                  enabled: !isAuthenticating,
+                  onSubmitted: (_) async {
+                    if (isAuthenticating) return;
+                    setDialogState(() {
+                      isAuthenticating = true;
+                      dialogError = null;
+                    });
+                    final success = await ref
+                        .read(vaultAuthStateProvider.notifier)
+                        .unlockWithPassword(passwordController.text);
+                    if (!ctx.mounted) return;
+                    if (success) {
+                      Navigator.pop(ctx);
+                      if (mounted) {
+                        context.go('/');
+                      }
+                    } else {
+                      setDialogState(() {
+                        isAuthenticating = false;
+                        dialogError = 'Incorrect master password. Please try again.';
+                      });
+                    }
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Master password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        color: AppColors.textMutedNavy,
+                      ),
+                      onPressed: () {
+                        setDialogState(() {
+                          obscure = !obscure;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                if (dialogError != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    dialogError!,
+                    style: const TextStyle(
+                      color: AppColors.error,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isAuthenticating ? null : () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isAuthenticating
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          isAuthenticating = true;
+                          dialogError = null;
+                        });
+
+                        final success = await ref
+                            .read(vaultAuthStateProvider.notifier)
+                            .unlockWithPassword(passwordController.text);
+
+                        if (!ctx.mounted) return;
+
+                        if (success) {
+                          Navigator.pop(ctx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Vault unlocked successfully!'),
+                                backgroundColor: AppColors.primary,
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                            context.go('/');
+                          }
+                        } else {
+                          setDialogState(() {
+                            isAuthenticating = false;
+                            dialogError = 'Incorrect master password. Please try again.';
+                          });
+                        }
+                      },
+                child: isAuthenticating
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text('Unlock'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showZeroKnowledgeInfo() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Enter Master Password'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Master password',
-            prefixIcon: Icon(Icons.lock_outline_rounded),
+        title: const Row(
+          children: [
+            Icon(Icons.shield_outlined, color: AppColors.primary, size: 24),
+            SizedBox(width: 8),
+            Text(
+              'Zero-Knowledge Security',
+              style: TextStyle(
+                color: AppColors.textPrimaryNavy,
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'MyVault operates with strict zero-knowledge architecture. '
+          'Your Master Password is never stored in plaintext and never transmitted anywhere.\n\n'
+          'Because of this encryption model, there is no remote password reset or backdoor recovery mechanism. '
+          'Without your master password, your vault data cannot be recovered.',
+          style: TextStyle(
+            color: AppColors.textSecondaryNavy,
+            fontSize: 14,
+            height: 1.45,
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _unlock(context, ref);
-            },
-            child: const Text('Unlock'),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Understood'),
           ),
         ],
       ),
@@ -56,7 +225,19 @@ class UnlockVaultScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    final authState = ref.watch(vaultAuthStateProvider);
+    final canUseBiometrics = authState.isBiometricAvailable && authState.isBiometricEnabled;
+
+    String biometricStatusHint;
+    if (canUseBiometrics) {
+      biometricStatusHint = 'Touch the fingerprint sensor';
+    } else if (!authState.isBiometricAvailable) {
+      biometricStatusHint = 'Biometrics not enrolled on device';
+    } else {
+      biometricStatusHint = 'Biometric unlock is disabled in Settings';
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -83,8 +264,11 @@ class UnlockVaultScreen extends ConsumerWidget {
               ),
               const Spacer(),
               // Biometric sensor graphic
-              BiometricSensorWidget(
-                onTap: () => _unlock(context, ref),
+              Opacity(
+                opacity: canUseBiometrics ? 1.0 : 0.45,
+                child: BiometricSensorWidget(
+                  onTap: _handleBiometricUnlock,
+                ),
               ),
               const SizedBox(height: AppSpacing.lg),
               Text(
@@ -96,7 +280,9 @@ class UnlockVaultScreen extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.xs),
               Text(
-                'Use your fingerprint to open your vault\nquickly and securely.',
+                canUseBiometrics
+                    ? 'Use your fingerprint to open your vault\nquickly and securely.'
+                    : 'Biometrics unavailable. Use your master password below.',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textMutedNavy,
@@ -104,10 +290,10 @@ class UnlockVaultScreen extends ConsumerWidget {
                     ),
               ),
               const SizedBox(height: AppSpacing.xs),
-              const Text(
-                'Touch the fingerprint sensor',
+              Text(
+                biometricStatusHint,
                 style: TextStyle(
-                  color: AppColors.primary,
+                  color: canUseBiometrics ? AppColors.primary : AppColors.textMutedNavy,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),
@@ -136,7 +322,7 @@ class UnlockVaultScreen extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => _showPasswordDialog(context, ref),
+                  onPressed: _showPasswordDialog,
                   icon: const Icon(Icons.lock_outline_rounded, color: AppColors.primary, size: 20),
                   label: const Text(
                     'Enter Master Password',
@@ -157,13 +343,7 @@ class UnlockVaultScreen extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Recovery options are accessible via Master Key in future phases.'),
-                    ),
-                  );
-                },
+                onPressed: _showZeroKnowledgeInfo,
                 child: const Text(
                   'Forgot your password?',
                   style: TextStyle(

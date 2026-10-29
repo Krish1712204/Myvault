@@ -64,47 +64,6 @@ final categoryCountsProvider = Provider<Map<VaultCategory, int>>((ref) {
   return map;
 });
 
-/// Manages vault lock & unlock state
-class AuthState {
-  final bool isVaultCreated;
-  final bool isUnlocked;
-
-  const AuthState({
-    this.isVaultCreated = true,
-    this.isUnlocked = true,
-  });
-
-  AuthState copyWith({
-    bool? isVaultCreated,
-    bool? isUnlocked,
-  }) {
-    return AuthState(
-      isVaultCreated: isVaultCreated ?? this.isVaultCreated,
-      isUnlocked: isUnlocked ?? this.isUnlocked,
-    );
-  }
-}
-
-class AuthNotifier extends StateNotifier<AuthState> {
-  AuthNotifier() : super(const AuthState());
-
-  void createVault(String masterPassword) {
-    state = state.copyWith(isVaultCreated: true, isUnlocked: true);
-  }
-
-  void unlockVault() {
-    state = state.copyWith(isUnlocked: true);
-  }
-
-  void lockVault() {
-    state = state.copyWith(isUnlocked: false);
-  }
-}
-
-final authStateProvider =
-    StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier();
-});
 
 /// Recent searches list
 class RecentSearchesNotifier extends StateNotifier<List<String>> {

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
-import '../../../../shared/state/vault_state_provider.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -13,44 +13,207 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _biometricUnlock = true;
   bool _appLock = true;
   bool _notifications = true;
-  String _autoLockDuration = '5 minutes';
   String _selectedTheme = 'Light';
 
   void _showChangePasswordDialog() {
-    final controller = TextEditingController();
+    final currentPasswordController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+    bool obscureCurrent = true;
+    bool obscureNew = true;
+    bool obscureConfirm = true;
+    String? errorMessage;
+    bool isSaving = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Change Master Password'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          decoration: const InputDecoration(
-            hintText: 'New master password',
-            prefixIcon: Icon(Icons.lock_outline_rounded),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Master password updated successfully')),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
+      barrierDismissible: !isSaving,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text(
+              'Change Master Password',
+              style: TextStyle(
+                color: AppColors.textPrimaryNavy,
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: currentPasswordController,
+                    obscureText: obscureCurrent,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'Current Master Password',
+                      hintText: 'Enter current password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureCurrent ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () {
+                          setDialogState(() => obscureCurrent = !obscureCurrent);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newPasswordController,
+                    obscureText: obscureNew,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'New Master Password',
+                      hintText: 'Enter new password',
+                      prefixIcon: const Icon(Icons.lock_reset_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureNew ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () {
+                          setDialogState(() => obscureNew = !obscureNew);
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: obscureConfirm,
+                    enabled: !isSaving,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm New Password',
+                      hintText: 'Confirm new password',
+                      prefixIcon: const Icon(Icons.lock_reset_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscureConfirm ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () {
+                          setDialogState(() => obscureConfirm = !obscureConfirm);
+                        },
+                      ),
+                    ),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(
+                        color: AppColors.error,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSaving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        final currentPwd = currentPasswordController.text;
+                        final newPwd = newPasswordController.text;
+                        final confirmPwd = confirmPasswordController.text;
+
+                        setDialogState(() {
+                          isSaving = true;
+                          errorMessage = null;
+                        });
+
+                        final storage = ref.read(vaultStorageServiceProvider);
+                        final crypto = ref.read(vaultCryptoServiceProvider);
+
+                        // 1. Verify current password
+                        final salt = await storage.getSalt();
+                        final verifier = await storage.getVerifier();
+
+                        if (salt == null || verifier == null) {
+                          setDialogState(() {
+                            isSaving = false;
+                            errorMessage = 'Vault credentials missing.';
+                          });
+                          return;
+                        }
+
+                        final currentValid = await crypto.verifyMasterPassword(
+                          candidatePassword: currentPwd,
+                          storedSalt: salt,
+                          storedVerifierHash: verifier,
+                        );
+
+                        if (!currentValid) {
+                          setDialogState(() {
+                            isSaving = false;
+                            errorMessage = 'Current password is incorrect.';
+                          });
+                          return;
+                        }
+
+                        // 2. Validate new password
+                        final validation = crypto.validatePassword(newPwd, confirmPwd);
+                        if (!validation.isValid) {
+                          setDialogState(() {
+                            isSaving = false;
+                            errorMessage = validation.errorMessage ?? 'Password criteria not met.';
+                          });
+                          return;
+                        }
+
+                        // 3. Derive and save new password credentials
+                        final newResult = await crypto.deriveMasterKeyAndVerifier(password: newPwd);
+                        await storage.saveVaultCredentials(
+                          salt: newResult.saltBytes,
+                          verifierHash: newResult.verifierHashBytes,
+                          kdfParams: newResult.kdfParams,
+                        );
+
+                        ref.read(vaultSessionProvider).startSession(newResult.derivedKeyBytes);
+
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
+
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Master password changed successfully!'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      },
+                child: isSaving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Text('Save'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  void _showAutoLockPicker() {
+  void _showAutoLockPicker(String currentDuration) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -64,15 +227,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               padding: EdgeInsets.all(16.0),
               child: Text(
                 'Auto Lock Duration',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimaryNavy,
+                ),
               ),
             ),
             ...['Immediately', '1 minute', '5 minutes', '15 minutes', '30 minutes'].map((duration) {
               return ListTile(
                 title: Text(duration),
-                trailing: _autoLockDuration == duration ? const Icon(Icons.check, color: AppColors.primary) : null,
+                trailing: currentDuration == duration ? const Icon(Icons.check, color: AppColors.primary) : null,
                 onTap: () {
-                  setState(() => _autoLockDuration = duration);
+                  ref.read(vaultAuthStateProvider.notifier).setAutoLockDuration(duration);
                   Navigator.pop(ctx);
                 },
               );
@@ -84,12 +251,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _lockVault() {
-    ref.read(authStateProvider.notifier).lockVault();
-    context.go('/unlock');
+    ref.read(vaultAuthStateProvider.notifier).lockVault();
+    // GoRouter redirect automatically navigates to /unlock
   }
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(vaultAuthStateProvider);
+    final isBiometricAvailable = authState.isBiometricAvailable;
+    final isBiometricEnabled = authState.isBiometricEnabled;
+    final autoLockDuration = authState.autoLockDuration;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -120,16 +292,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   SwitchListTile(
                     secondary: const Icon(Icons.fingerprint_rounded, color: AppColors.primary),
                     title: const Text('Biometric Unlock', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    value: _biometricUnlock,
+                    subtitle: !isBiometricAvailable
+                        ? const Text('Not enrolled or unsupported on this device', style: TextStyle(fontSize: 12))
+                        : null,
+                    value: isBiometricAvailable && isBiometricEnabled,
                     activeThumbColor: AppColors.primary,
-                    onChanged: (val) => setState(() => _biometricUnlock = val),
+                    onChanged: isBiometricAvailable
+                        ? (val) => ref.read(vaultAuthStateProvider.notifier).setBiometricEnabled(val)
+                        : null,
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   _buildNavTile(
                     icon: Icons.timer_outlined,
                     title: 'Auto Lock',
-                    trailingText: _autoLockDuration,
-                    onTap: _showAutoLockPicker,
+                    trailingText: autoLockDuration,
+                    onTap: () => _showAutoLockPicker(autoLockDuration),
                   ),
                   const Divider(color: AppColors.border, height: 1),
                   SwitchListTile(

@@ -1,10 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:myvault/features/auth/domain/vault_auth_notifier.dart';
+import 'package:myvault/features/auth/domain/vault_auth_state.dart';
 import 'package:myvault/main.dart';
 
+class UnlockedAuthNotifier extends VaultAuthNotifier {
+  UnlockedAuthNotifier({
+    required super.cryptoService,
+    required super.storageService,
+    required super.biometricService,
+    required super.session,
+  }) {
+    state = const VaultAuthState(
+      status: VaultStatus.unlocked,
+      isBiometricAvailable: true,
+      isBiometricEnabled: true,
+      autoLockDuration: '5 minutes',
+    );
+  }
+
+  @override
+  Future<void> initialize() async {}
+}
+
 void main() {
-  testWidgets('MyVault app launches and renders home dashboard with categories', (WidgetTester tester) async {
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+  });
+
+  testWidgets('Fresh launch with uninitialized vault displays Welcome screen', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() => tester.view.resetPhysicalSize());
@@ -12,6 +38,31 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(
         child: MyVaultApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('MyVault'), findsWidgets);
+    expect(find.text('Your Personal Digital Vault'), findsOneWidget);
+    expect(find.text('Get Started'), findsOneWidget);
+  });
+
+  testWidgets('Unlocked vault launches and renders home dashboard with categories', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() => tester.view.resetPhysicalSize());
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          vaultAuthStateProvider.overrideWith((ref) => UnlockedAuthNotifier(
+                cryptoService: ref.watch(vaultCryptoServiceProvider),
+                storageService: ref.watch(vaultStorageServiceProvider),
+                biometricService: ref.watch(vaultBiometricServiceProvider),
+                session: ref.watch(vaultSessionProvider),
+              )),
+        ],
+        child: const MyVaultApp(),
       ),
     );
     await tester.pumpAndSettle();
@@ -40,8 +91,16 @@ void main() {
     addTearDown(() => tester.view.resetPhysicalSize());
 
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MyVaultApp(),
+      ProviderScope(
+        overrides: [
+          vaultAuthStateProvider.overrideWith((ref) => UnlockedAuthNotifier(
+                cryptoService: ref.watch(vaultCryptoServiceProvider),
+                storageService: ref.watch(vaultStorageServiceProvider),
+                biometricService: ref.watch(vaultBiometricServiceProvider),
+                session: ref.watch(vaultSessionProvider),
+              )),
+        ],
+        child: const MyVaultApp(),
       ),
     );
     await tester.pumpAndSettle();
