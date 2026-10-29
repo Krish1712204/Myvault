@@ -37,7 +37,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return item.title.toLowerCase().contains(query) ||
           item.subtitle.toLowerCase().contains(query) ||
           (item.username != null && item.username!.toLowerCase().contains(query)) ||
-          (item.url != null && item.url!.toLowerCase().contains(query));
+          (item.url != null && item.url!.toLowerCase().contains(query)) ||
+          (item.fullName != null && item.fullName!.toLowerCase().contains(query)) ||
+          (item.documentNumber != null && item.documentNumber!.toLowerCase().contains(query)) ||
+          (item.fileName != null && item.fileName!.toLowerCase().contains(query));
     }).toList();
 
     return Scaffold(
@@ -339,18 +342,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             onTap: () {
               if (item.category == VaultCategory.passwords) {
                 context.push('/password-details/${item.id}');
+              } else if (item.category == VaultCategory.idCards) {
+                context.push('/id-details/${item.id}');
+              } else if (item.category == VaultCategory.documents || item.category == VaultCategory.photos) {
+                context.push('/document-details/${item.id}');
               } else {
                 context.push('/category/${item.category.keyName}');
               }
             },
-            leading: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.lock_outline_rounded, color: AppColors.primary, size: 20),
-            ),
+            leading: _buildSearchItemAvatar(item),
             title: Text(
               item.title,
               style: const TextStyle(
@@ -378,6 +378,44 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSearchItemAvatar(VaultItem item) {
+    IconData icon = Icons.lock_outline_rounded;
+    Color color = AppColors.primary;
+    Color bg = AppColors.primaryLight;
+
+    if (item.category == VaultCategory.idCards) {
+      icon = Icons.badge_outlined;
+      color = AppColors.categoryIdCards;
+      bg = AppColors.categoryIdCardsBg;
+    } else if (item.category == VaultCategory.documents) {
+      icon = Icons.picture_as_pdf_rounded;
+      color = AppColors.categoryDocuments;
+      bg = AppColors.categoryDocumentsBg;
+    } else if (item.category == VaultCategory.photos) {
+      icon = Icons.image_rounded;
+      color = AppColors.categoryPhotos;
+      bg = AppColors.categoryPhotosBg;
+    } else if (item.category == VaultCategory.notes) {
+      icon = Icons.sticky_note_2_rounded;
+      color = AppColors.categoryNotes;
+      bg = AppColors.categoryNotesBg;
+    } else if (item.category == VaultCategory.contacts) {
+      icon = Icons.person_rounded;
+      color = AppColors.categoryContacts;
+      bg = AppColors.categoryContactsBg;
+    }
+
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Icon(icon, color: color, size: 20),
     );
   }
 }

@@ -44,6 +44,7 @@ class IdentityEntry {
   final String? expiryDate;
   final String? issuingCountry;
   final String? notes;
+  final String? attachmentPath;
 
   const IdentityEntry({
     required this.id,
@@ -55,6 +56,7 @@ class IdentityEntry {
     this.expiryDate,
     this.issuingCountry,
     this.notes,
+    this.attachmentPath,
   });
 
   Map<String, dynamic> toMap() => {
@@ -67,6 +69,7 @@ class IdentityEntry {
         'expiry_date': expiryDate,
         'issuing_country': issuingCountry,
         'notes': notes,
+        'attachment_path': attachmentPath,
       };
 
   factory IdentityEntry.fromMap(Map<String, dynamic> map) => IdentityEntry(
@@ -79,6 +82,7 @@ class IdentityEntry {
         expiryDate: map['expiry_date'] as String?,
         issuingCountry: map['issuing_country'] as String?,
         notes: map['notes'] as String?,
+        attachmentPath: map['attachment_path'] as String?,
       );
 }
 

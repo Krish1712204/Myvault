@@ -118,7 +118,17 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
-            onPressed: () => context.push('/add-item'),
+            onPressed: () {
+              if (category == VaultCategory.passwords) {
+                context.push('/add-item');
+              } else if (category == VaultCategory.idCards) {
+                context.push('/add-id');
+              } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                context.push('/add-document');
+              } else {
+                context.push('/add-item');
+              }
+            },
           ),
           const SizedBox(width: 8),
         ],
@@ -207,6 +217,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                             onTap: () {
                               if (category == VaultCategory.passwords) {
                                 context.push('/password-details/${item.id}');
+                              } else if (category == VaultCategory.idCards) {
+                                context.push('/id-details/${item.id}');
+                              } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                                context.push('/document-details/${item.id}');
                               } else {
                                 _showItemDetailsDialog(context, item);
                               }
@@ -246,13 +260,23 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                     if (action == 'view') {
                                       if (category == VaultCategory.passwords) {
                                         context.push('/password-details/${item.id}');
+                                      } else if (category == VaultCategory.idCards) {
+                                        context.push('/id-details/${item.id}');
+                                      } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                                        context.push('/document-details/${item.id}');
                                       } else {
                                         _showItemDetailsDialog(context, item);
                                       }
                                     } else if (action == 'edit') {
-                                      context.push(category == VaultCategory.passwords
-                                          ? '/edit-password/${item.id}'
-                                          : '/add-item');
+                                      if (category == VaultCategory.passwords) {
+                                        context.push('/edit-password/${item.id}');
+                                      } else if (category == VaultCategory.idCards) {
+                                        context.push('/edit-id/${item.id}');
+                                      } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                                        context.push('/edit-document/${item.id}');
+                                      } else {
+                                        context.push('/add-item');
+                                      }
                                     } else if (action == 'delete') {
                                       _confirmDelete(context, item);
                                     } else if (action == 'copy') {
@@ -261,6 +285,12 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                           context: context,
                                           text: item.password!,
                                           label: 'Password',
+                                        );
+                                      } else if (category == VaultCategory.idCards && item.documentNumber != null && item.documentNumber!.isNotEmpty) {
+                                        ClipboardService.copySensitive(
+                                          context: context,
+                                          text: item.documentNumber!,
+                                          label: '${item.title} Number',
                                         );
                                       } else {
                                         ClipboardService.copyPublic(
@@ -274,7 +304,14 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                   itemBuilder: (ctx) => [
                                     const PopupMenuItem(value: 'view', child: Text('View Details')),
                                     const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                                    const PopupMenuItem(value: 'copy', child: Text('Copy Password')),
+                                    PopupMenuItem(
+                                      value: 'copy',
+                                      child: Text(
+                                        category == VaultCategory.passwords
+                                            ? 'Copy Password'
+                                            : (category == VaultCategory.idCards ? 'Copy ID Number' : 'Copy Info'),
+                                      ),
+                                    ),
                                     const PopupMenuItem(value: 'delete', child: Text('Delete')),
                                   ],
                                 ),

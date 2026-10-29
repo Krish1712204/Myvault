@@ -12,7 +12,11 @@ import '../../features/dashboard/presentation/screens/home_dashboard_screen.dart
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/settings/presentation/screens/backup_restore_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/vault_items/presentation/screens/add_document_screen.dart';
+import '../../features/vault_items/presentation/screens/add_identity_screen.dart';
 import '../../features/vault_items/presentation/screens/add_item_screen.dart';
+import '../../features/vault_items/presentation/screens/document_details_screen.dart';
+import '../../features/vault_items/presentation/screens/identity_details_screen.dart';
 import '../../features/vault_items/presentation/screens/password_details_screen.dart';
 import '../../shared/widgets/main_scaffold_shell.dart';
 
@@ -169,6 +173,48 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final id = state.pathParameters['id'] ?? 'pwd_1';
           return PasswordDetailsScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/id-details/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return IdentityDetailsScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/add-id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AddIdentityScreen(),
+      ),
+      GoRoute(
+        path: '/edit-id/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'];
+          return AddIdentityScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/document-details/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'] ?? '';
+          return DocumentDetailsScreen(itemId: id);
+        },
+      ),
+      GoRoute(
+        path: '/add-document',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AddDocumentScreen(),
+      ),
+      GoRoute(
+        path: '/edit-document/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) {
+          final id = state.pathParameters['id'];
+          return AddDocumentScreen(itemId: id);
         },
       ),
       GoRoute(

@@ -209,11 +209,20 @@ class VaultRepository {
       }
     }
 
+    // Check if there is an associated identity attachment file
+    final idRows = await _db.query('identity_entries', columns: ['attachment_path'], where: 'item_id = ?', whereArgs: [id]);
+    for (final row in idRows) {
+      final attachPath = row['attachment_path'] as String?;
+      if (attachPath != null && attachPath.isNotEmpty) {
+        await _fileService.deleteEncryptedFile(attachPath);
+      }
+    }
+
     // Delete from vault_items (cascades to all detail tables)
     await _db.delete('vault_items', where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Searches items by query across titles, subtitles, usernames, and website URLs
+  /// Searches items by query across titles, subtitles, usernames, website URLs, holder names, and document names
   Future<List<VaultItem>> searchItems(String query) async {
     if (query.trim().isEmpty) return getAllItems();
     final cleanQuery = '%${query.trim().toLowerCase()}%';
@@ -221,12 +230,17 @@ class VaultRepository {
     final rows = await _db.rawQuery('''
       SELECT DISTINCT v.* FROM vault_items v
       LEFT JOIN password_entries p ON v.id = p.item_id
+      LEFT JOIN identity_entries i ON v.id = i.item_id
+      LEFT JOIN document_entries d ON v.id = d.item_id
       WHERE LOWER(v.title) LIKE ? 
          OR LOWER(v.subtitle) LIKE ? 
          OR LOWER(COALESCE(p.username, '')) LIKE ? 
          OR LOWER(COALESCE(p.website_url, '')) LIKE ?
+         OR LOWER(COALESCE(i.full_name, '')) LIKE ?
+         OR LOWER(COALESCE(i.document_number, '')) LIKE ?
+         OR LOWER(COALESCE(d.file_name, '')) LIKE ?
       ORDER BY v.updated_at DESC
-    ''', [cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
+    ''', [cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery, cleanQuery]);
 
     return Future.wait(rows.map((row) => _mapRowToVaultItem(row)));
   }
@@ -249,6 +263,22 @@ class VaultRepository {
     String? details;
     String? size;
 
+    // Identity specific
+    String? documentType;
+    String? documentNumber;
+    String? fullName;
+    String? issuedDate;
+    String? expiryDate;
+    String? issuingCountry;
+    String? attachmentPath;
+
+    // Document & Photo specific
+    String? filePath;
+    String? fileName;
+    int? fileSize;
+    String? mimeType;
+    String? fileExtension;
+
     if (category == VaultCategory.passwords) {
       final pRows = await _db.query('password_entries', where: 'item_id = ?', whereArgs: [id], limit: 1);
       if (pRows.isNotEmpty) {
@@ -260,16 +290,30 @@ class VaultRepository {
     } else if (category == VaultCategory.idCards) {
       final iRows = await _db.query('identity_entries', where: 'item_id = ?', whereArgs: [id], limit: 1);
       if (iRows.isNotEmpty) {
-        details = iRows.first['document_number'] as String?;
+        final iRow = iRows.first;
+        documentType = iRow['document_type'] as String?;
+        documentNumber = iRow['document_number'] as String?;
+        fullName = iRow['full_name'] as String?;
+        issuedDate = iRow['issued_date'] as String?;
+        expiryDate = iRow['expiry_date'] as String?;
+        issuingCountry = iRow['issuing_country'] as String?;
+        details = iRow['notes'] as String?;
+        attachmentPath = iRow['attachment_path'] as String?;
       }
     } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
       final dRows = await _db.query('document_entries', where: 'item_id = ?', whereArgs: [id], limit: 1);
       if (dRows.isNotEmpty) {
-        final bytes = (dRows.first['file_size'] as int?) ?? 0;
+        final dRow = dRows.first;
+        filePath = dRow['file_path'] as String?;
+        fileName = dRow['file_name'] as String?;
+        fileSize = dRow['file_size'] as int?;
+        mimeType = dRow['mime_type'] as String?;
+        fileExtension = dRow['file_extension'] as String?;
+        details = dRow['notes'] as String?;
+        final bytes = fileSize ?? 0;
         size = bytes > 1024 * 1024
             ? '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB'
             : '${(bytes / 1024).toStringAsFixed(0)} KB';
-        details = dRows.first['file_name'] as String?;
       }
     } else if (category == VaultCategory.notes) {
       final nRows = await _db.query('notes', where: 'item_id = ?', whereArgs: [id], limit: 1);
@@ -298,6 +342,18 @@ class VaultRepository {
       size: size,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      documentType: documentType,
+      documentNumber: documentNumber,
+      fullName: fullName,
+      issuedDate: issuedDate,
+      expiryDate: expiryDate,
+      issuingCountry: issuingCountry,
+      attachmentPath: attachmentPath,
+      filePath: filePath,
+      fileName: fileName,
+      fileSize: fileSize,
+      mimeType: mimeType,
+      fileExtension: fileExtension,
     );
   }
 

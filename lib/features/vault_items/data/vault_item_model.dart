@@ -64,6 +64,22 @@ class VaultItem {
   final int? createdAt;
   final int? updatedAt;
 
+  // Identity / ID Card specific fields
+  final String? documentType;
+  final String? documentNumber;
+  final String? fullName;
+  final String? issuedDate;
+  final String? expiryDate;
+  final String? issuingCountry;
+  final String? attachmentPath;
+
+  // Document & Photo specific fields
+  final String? filePath;
+  final String? fileName;
+  final int? fileSize;
+  final String? mimeType;
+  final String? fileExtension;
+
   const VaultItem({
     required this.id,
     required this.title,
@@ -79,6 +95,18 @@ class VaultItem {
     this.size,
     this.createdAt,
     this.updatedAt,
+    this.documentType,
+    this.documentNumber,
+    this.fullName,
+    this.issuedDate,
+    this.expiryDate,
+    this.issuingCountry,
+    this.attachmentPath,
+    this.filePath,
+    this.fileName,
+    this.fileSize,
+    this.mimeType,
+    this.fileExtension,
   });
 
   VaultItem copyWith({
@@ -96,6 +124,18 @@ class VaultItem {
     String? size,
     int? createdAt,
     int? updatedAt,
+    String? documentType,
+    String? documentNumber,
+    String? fullName,
+    String? issuedDate,
+    String? expiryDate,
+    String? issuingCountry,
+    String? attachmentPath,
+    String? filePath,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
+    String? fileExtension,
   }) {
     return VaultItem(
       id: id ?? this.id,
@@ -112,6 +152,18 @@ class VaultItem {
       size: size ?? this.size,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      documentType: documentType ?? this.documentType,
+      documentNumber: documentNumber ?? this.documentNumber,
+      fullName: fullName ?? this.fullName,
+      issuedDate: issuedDate ?? this.issuedDate,
+      expiryDate: expiryDate ?? this.expiryDate,
+      issuingCountry: issuingCountry ?? this.issuingCountry,
+      attachmentPath: attachmentPath ?? this.attachmentPath,
+      filePath: filePath ?? this.filePath,
+      fileName: fileName ?? this.fileName,
+      fileSize: fileSize ?? this.fileSize,
+      mimeType: mimeType ?? this.mimeType,
+      fileExtension: fileExtension ?? this.fileExtension,
     );
   }
 }

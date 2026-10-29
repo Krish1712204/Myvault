@@ -20,11 +20,92 @@ class QuickActionsRow extends StatelessWidget {
     );
   }
 
-  void _showImportPlaceholder(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('File importer ready for SAF / Android Keystore file import.'),
-        backgroundColor: AppColors.primary,
+  void _showAddItemSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: 20),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Add to Vault',
+                style: TextStyle(
+                  color: AppColors.textPrimaryNavy,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.categoryPasswordsBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.key_rounded, color: AppColors.categoryPasswords),
+                ),
+                title: const Text('Password', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Website, application, or account login credentials'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/add-item');
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.categoryIdCardsBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.badge_outlined, color: AppColors.categoryIdCards),
+                ),
+                title: const Text('ID Card', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Aadhaar, PAN, Passport, Driving License, Voter ID'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/add-id');
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.categoryDocumentsBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.file_present_rounded, color: AppColors.categoryDocuments),
+                ),
+                title: const Text('Document or Photo', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Encrypted PDF, JPG, PNG, WEBP, or TXT file'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  context.push('/add-document');
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -72,7 +153,7 @@ class QuickActionsRow extends StatelessWidget {
               label: 'Add Item',
               bgColor: AppColors.categoryPasswordsBg,
               iconColor: AppColors.categoryPasswords,
-              onTap: () => context.push('/add-item'),
+              onTap: () => _showAddItemSheet(context),
             ),
             _buildActionButton(
               icon: Icons.document_scanner_outlined,
@@ -93,7 +174,7 @@ class QuickActionsRow extends StatelessWidget {
               label: 'Import\nFile',
               bgColor: AppColors.categoryDocumentsBg,
               iconColor: AppColors.categoryDocuments,
-              onTap: () => _showImportPlaceholder(context),
+              onTap: () => context.push('/add-document'),
             ),
           ],
         ),

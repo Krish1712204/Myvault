@@ -2,7 +2,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 
 /// Database schema definitions, migrations, and table creation logic for SQLCipher
 class VaultSchema {
-  static const int currentVersion = 1;
+  static const int currentVersion = 2;
   static const String dbFileName = 'myvault_encrypted.db';
 
   static Future<void> onConfigure(Database db) async {
@@ -50,6 +50,7 @@ class VaultSchema {
           expiry_date TEXT,
           issuing_country TEXT,
           notes TEXT,
+          attachment_path TEXT,
           FOREIGN KEY (item_id) REFERENCES vault_items (id) ON DELETE CASCADE
         );
       ''');
@@ -126,9 +127,10 @@ class VaultSchema {
   }
 
   static Future<void> onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Migration hooks for future schema versions
+    // Migration hooks for schema versions
     if (oldVersion < 2) {
-      // Future V2 migration logic
+      // V2: Add optional attachment_path to identity_entries
+      await db.execute('ALTER TABLE identity_entries ADD COLUMN attachment_path TEXT;');
     }
   }
 }

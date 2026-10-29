@@ -140,6 +140,24 @@ class EncryptedFileService {
     );
   }
 
+  Future<Directory> _getPreviewDirectory() async {
+    if (_customStoragePath != null) {
+      final dir = Directory(p.join(_customStoragePath, 'vault_previews'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final dir = Directory(p.join(tempDir.path, 'vault_previews'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    } catch (_) {
+      final dir = Directory(p.join(Directory.systemTemp.path, 'vault_previews'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      return dir;
+    }
+  }
+
   /// Creates a temporary decrypted file for viewer/preview with best-effort cleanup
   Future<File> createTemporaryPreviewFile({
     required String relativePath,
@@ -151,17 +169,7 @@ class EncryptedFileService {
       fileStorageKey: fileStorageKey,
     );
 
-    Directory tempDir;
-    try {
-      tempDir = await getTemporaryDirectory();
-    } catch (_) {
-      tempDir = Directory.systemTemp.createTempSync('vault_prev_test_');
-    }
-    final previewDir = Directory(p.join(tempDir.path, 'vault_previews'));
-    if (!await previewDir.exists()) {
-      await previewDir.create(recursive: true);
-    }
-
+    final previewDir = await _getPreviewDirectory();
     final tempFile = File(p.join(previewDir.path, fileName));
     await tempFile.writeAsBytes(decryptedBytes, flush: true);
     return tempFile;
@@ -170,8 +178,7 @@ class EncryptedFileService {
   /// Cleans up temporary preview files
   Future<void> clearTemporaryPreviews() async {
     try {
-      final tempDir = await getTemporaryDirectory();
-      final previewDir = Directory(p.join(tempDir.path, 'vault_previews'));
+      final previewDir = await _getPreviewDirectory();
       if (await previewDir.exists()) {
         await previewDir.delete(recursive: true);
       }
