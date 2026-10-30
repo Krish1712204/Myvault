@@ -283,6 +283,12 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                if (category == VaultCategory.documents || category == VaultCategory.photos)
+                                  IconButton(
+                                    icon: const Icon(Icons.visibility_outlined, color: AppColors.primary, size: 22),
+                                    tooltip: 'Preview',
+                                    onPressed: () => context.push('/document-details/${item.id}'),
+                                  ),
                                 IconButton(
                                   icon: Icon(
                                     item.isFavourite ? Icons.star_rounded : Icons.star_border_rounded,

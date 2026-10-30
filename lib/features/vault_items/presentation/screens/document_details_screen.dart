@@ -5,9 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 import '../../data/vault_item_model.dart';
 
 class DocumentDetailsScreen extends ConsumerStatefulWidget {
@@ -40,14 +42,19 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
 
   @override
   void dispose() {
+    _cleanupTempPreview();
+    super.dispose();
+  }
+
+  void _cleanupTempPreview() {
     if (_tempPreviewFile != null) {
       try {
         if (_tempPreviewFile!.existsSync()) {
           _tempPreviewFile!.deleteSync();
         }
       } catch (_) {}
+      _tempPreviewFile = null;
     }
-    super.dispose();
   }
 
   Future<void> _loadPreview() async {
@@ -61,7 +68,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
 
     if (filePath.startsWith('seed_')) {
       setState(() {
-        _previewError = 'This is a sample vault item placeholder. Real uploaded documents are encrypted and previewed on demand.';
+        _previewError = 'Sample placeholder. Real uploaded documents and photos are encrypted and previewed on demand.';
       });
       return;
     }
@@ -75,7 +82,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       final bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
       final ext = item.fileExtension?.toLowerCase() ?? '';
 
-      if (ext == '.txt') {
+      if (ext == '.txt' || ext == '.json' || ext == '.csv' || ext == '.log' || ext == '.md') {
         _previewText = utf8.decode(bytes, allowMalformed: true);
       }
 
@@ -88,6 +95,199 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         _isLoadingPreview = false;
         _previewError = 'Could not preview file: ${e.toString()}';
       });
+    }
+  }
+
+  /// Opens an interactive full-screen preview for images, text files, and documents/PDFs
+  Future<void> _openFullscreenPreview(VaultItem item) async {
+    final filePath = item.filePath;
+    if (filePath == null || filePath.isEmpty) return;
+
+    if (filePath.startsWith('seed_')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This is a sample placeholder. Real files can be previewed.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final ext = item.fileExtension?.toLowerCase() ?? '';
+    final isImage = ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
+
+    // 1. Image Preview: Fullscreen Interactive Pinch-to-Zoom Viewer
+    if (isImage) {
+      Uint8List? bytes = _previewBytes;
+      if (bytes == null) {
+        setState(() => _isLoadingPreview = true);
+        try {
+          bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
+          setState(() {
+            _previewBytes = bytes;
+            _isLoadingPreview = false;
+          });
+        } catch (e) {
+          setState(() => _isLoadingPreview = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not load image: $e'), backgroundColor: AppColors.error),
+            );
+          }
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        useSafeArea: false,
+        barrierColor: Colors.black.withAlpha(240),
+        builder: (ctx) => Scaffold(
+          backgroundColor: Colors.transparent,
+          appBar: AppBar(
+            backgroundColor: Colors.black.withAlpha(160),
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              onPressed: () => Navigator.pop(ctx),
+            ),
+            title: Text(
+              item.title,
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download_rounded, color: Colors.white),
+                tooltip: 'Download to Device',
+                onPressed: () => _downloadFile(item),
+              ),
+            ],
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5.0,
+              child: Image.memory(
+                bytes!,
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          bottomNavigationBar: Container(
+            color: Colors.black.withAlpha(160),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: SafeArea(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      item.fileName ?? item.title,
+                      style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _formatFileSize(item.fileSize),
+                    style: const TextStyle(color: Colors.white54, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    // 2. Text / Document Note Preview
+    if (ext == '.txt' || ext == '.json' || ext == '.csv' || ext == '.log' || ext == '.md') {
+      Uint8List? bytes = _previewBytes;
+      if (bytes == null) {
+        setState(() => _isLoadingPreview = true);
+        try {
+          bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
+          setState(() {
+            _previewBytes = bytes;
+            _previewText = utf8.decode(bytes!, allowMalformed: true);
+            _isLoadingPreview = false;
+          });
+        } catch (e) {
+          setState(() => _isLoadingPreview = false);
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(item.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                _previewText ?? '',
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // 3. PDF / Office Document / Any File: Open in System Viewer
+    try {
+      final session = ref.read(vaultSessionProvider);
+      final vek = session.vek;
+      if (vek == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vault is locked. Unlock to preview.'), backgroundColor: AppColors.error),
+        );
+        return;
+      }
+
+      final crypto = ref.read(vaultCryptoServiceProvider);
+      final fileKey = await crypto.deriveFileStorageKey(vek);
+      final fileService = ref.read(encryptedFileServiceProvider);
+
+      final defaultName = item.fileName ?? 'preview_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : ".pdf"}';
+      final tempFile = await fileService.createTemporaryPreviewFile(
+        relativePath: filePath,
+        fileName: defaultName,
+        fileStorageKey: fileKey,
+      );
+      _tempPreviewFile = tempFile;
+
+      final result = await OpenFilex.open(tempFile.path);
+      if (result.type != ResultType.done && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result.message.isNotEmpty && result.message != 'done'
+                  ? result.message
+                  : 'No default viewer found. You can tap Download to save and open it.',
+            ),
+            backgroundColor: AppColors.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Preview error: $e'), backgroundColor: AppColors.error),
+        );
+      }
     }
   }
 
@@ -252,93 +452,158 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     }
 
     final ext = item.fileExtension?.toLowerCase() ?? '';
-    final isImage = ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp';
+    final isImage = ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
 
     if (isImage && _previewBytes != null) {
-      return ClipRRect(
+      return InkWell(
+        onTap: () => _openFullscreenPreview(item),
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          constraints: const BoxConstraints(maxHeight: 340),
-          color: Colors.black12,
-          child: InteractiveViewer(
-            maxScale: 4.0,
-            child: Center(
-              child: Image.memory(
-                _previewBytes!,
-                fit: BoxFit.contain,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 340),
+                width: double.infinity,
+                color: Colors.black12,
+                child: Center(
+                  child: Image.memory(
+                    _previewBytes!,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
+            Positioned(
+              right: 12,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(160),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
+                    SizedBox(width: 4),
+                    Text(
+                      'Tap to zoom',
+                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if ((ext == '.txt' || ext == '.json' || ext == '.csv' || ext == '.log' || ext == '.md') && _previewText != null) {
+      return InkWell(
+        onTap: () => _openFullscreenPreview(item),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          constraints: const BoxConstraints(maxHeight: 250),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Text(
+                    _previewText!,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                      color: AppColors.textPrimaryNavy,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(Icons.open_in_full_rounded, size: 14, color: AppColors.primary),
+                  SizedBox(width: 4),
+                  Text('Tap to expand', style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ],
           ),
         ),
       );
     }
 
-    if (ext == '.txt' && _previewText != null) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        constraints: const BoxConstraints(maxHeight: 250),
+    // PDF and other document types: Tappable interactive preview card
+    return InkWell(
+      onTap: () => _openFullscreenPreview(item),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border),
         ),
-        child: SingleChildScrollView(
-          child: Text(
-            _previewText!,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 13,
-              color: AppColors.textPrimaryNavy,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                color: AppColors.categoryDocumentsBg,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                ext == '.pdf' ? Icons.picture_as_pdf_rounded : Icons.insert_drive_file_rounded,
+                size: 40,
+                color: ext == '.pdf' ? const Color(0xFFE53935) : AppColors.primary,
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            Text(
+              item.fileName ?? item.title,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: AppColors.textPrimaryNavy,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _formatFileSize(item.fileSize),
+              style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.visibility_rounded, color: AppColors.primary, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'Tap to Preview Document',
+                    style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-      );
-    }
-
-    // PDF and other document types
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: AppColors.categoryDocumentsBg,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              ext == '.pdf' ? Icons.picture_as_pdf_rounded : Icons.insert_drive_file_rounded,
-              size: 40,
-              color: ext == '.pdf' ? const Color(0xFFE53935) : AppColors.primary,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            item.fileName ?? item.title,
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: AppColors.textPrimaryNavy,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _formatFileSize(item.fileSize),
-            style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-          ),
-          const SizedBox(height: 14),
-          const Text(
-            'Encrypted with AES-256-GCM in app-private storage.\nPlaintext copies are never persisted.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
-          ),
-        ],
       ),
     );
   }
@@ -399,7 +664,13 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           ),
         ),
         actions: [
-          // 1-Tap Download in AppBar
+          // 1-Tap Preview in Top Bar
+          IconButton(
+            icon: const Icon(Icons.visibility_rounded, color: AppColors.primary, size: 24),
+            tooltip: 'Preview',
+            onPressed: () => _openFullscreenPreview(item),
+          ),
+          // 1-Tap Download in Top Bar
           IconButton(
             icon: _isDownloading
                 ? const SizedBox(
@@ -424,7 +695,9 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
             onSelected: (val) {
-              if (val == 'download') {
+              if (val == 'preview') {
+                _openFullscreenPreview(item);
+              } else if (val == 'download') {
                 _downloadFile(item);
               } else if (val == 'edit') {
                 context.push('/edit-document/${item.id}');
@@ -433,6 +706,16 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'preview',
+                child: Row(
+                  children: [
+                    Icon(Icons.visibility_rounded, size: 18, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('Preview Document'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'download',
                 child: Row(
@@ -474,30 +757,53 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Preview area
+              // Preview Box
               _buildPreviewContent(item),
               const SizedBox(height: AppSpacing.md),
 
-              // Prominent Download / Save to Device Button
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                icon: _isDownloading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.download_rounded, size: 22),
-                label: Text(
-                  _isDownloading ? 'Decrypting & Exporting...' : 'Download / Save to Device',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                onPressed: _isDownloading ? null : () => _downloadFile(item),
+              // Side-by-side Action Buttons: Preview & Download
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.visibility_rounded, size: 20),
+                      label: Text(
+                        item.category == VaultCategory.photos ? 'Preview Photo' : 'Preview Document',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      onPressed: () => _openFullscreenPreview(item),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary, width: 1.5),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: _isDownloading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                            )
+                          : const Icon(Icons.download_rounded, size: 20),
+                      label: Text(
+                        _isDownloading ? 'Saving...' : 'Download',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      onPressed: _isDownloading ? null : () => _downloadFile(item),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: AppSpacing.md),
 
@@ -583,7 +889,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
               ),
               const SizedBox(height: AppSpacing.lg),
 
-              // Action Buttons
+              // Action Buttons: Delete & Edit
               Row(
                 children: [
                   Expanded(

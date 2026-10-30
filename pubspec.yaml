@@ -2,7 +2,7 @@ name: myvault
 description: "MyVault — Personal digital vault Android application"
 publish_to: 'none'
 
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -21,6 +21,7 @@ dependencies:
   path: ^1.9.1
   file_picker: ^13.3.0
   url_launcher: ^6.3.3
+  open_filex: ^5.0.0
 
 dev_dependencies:
   flutter_test:
