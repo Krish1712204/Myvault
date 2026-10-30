@@ -1,34 +1,71 @@
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../domain/vault_auth_notifier.dart';
+import '../../domain/vault_auth_state.dart';
 import '../widgets/vault_shield_logo.dart';
 
-class WelcomeScreen extends StatefulWidget {
+class WelcomeScreen extends ConsumerStatefulWidget {
   const WelcomeScreen({super.key});
 
   @override
-  State<WelcomeScreen> createState() => _WelcomeScreenState();
+  ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen>
+class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _animController;
+
+  static const List<_OrbitalItem> _orbitItems = [
+    _OrbitalItem(
+      icon: Icons.key_rounded,
+      color: Color(0xFF2979FF),
+      label: 'Passwords',
+    ),
+    _OrbitalItem(
+      icon: Icons.badge_rounded,
+      color: Color(0xFFFFA000),
+      label: 'ID Cards',
+    ),
+    _OrbitalItem(
+      icon: Icons.picture_as_pdf_rounded,
+      color: Color(0xFFE53935),
+      label: 'Documents',
+    ),
+    _OrbitalItem(
+      icon: Icons.photo_library_rounded,
+      color: Color(0xFF8E24AA),
+      label: 'Photos',
+    ),
+    _OrbitalItem(
+      icon: Icons.credit_card_rounded,
+      color: Color(0xFF00C853),
+      label: 'Cards',
+    ),
+    _OrbitalItem(
+      icon: Icons.vpn_key_rounded,
+      color: Color(0xFF3F51B5),
+      label: '2FA Keys',
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3200),
+      duration: const Duration(milliseconds: 6000),
     );
 
     // In unit/widget tests, avoid infinite repeat so pumpAndSettle completes cleanly
-    final isTest = Platform.environment.containsKey('FLUTTER_TEST');
+    final isTest = Platform.environment.containsKey('FLUTTER_TEST') ||
+        WidgetsBinding.instance.runtimeType.toString().toLowerCase().contains('test');
     if (isTest) {
-      _animController.forward();
+      _animController.value = 0.5;
     } else {
       _animController.repeat();
     }
@@ -43,6 +80,8 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    final authState = ref.watch(vaultAuthStateProvider);
+    final isVaultCreated = authState.status == VaultStatus.locked || authState.status == VaultStatus.unlocked;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -51,19 +90,20 @@ class _WelcomeScreenState extends State<WelcomeScreen>
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: Column(
             children: [
-              const SizedBox(height: AppSpacing.lg),
-              // Top shield logo
-              const VaultShieldLogo(size: 88),
               const SizedBox(height: AppSpacing.md),
+              // Top shield logo
+              const VaultShieldLogo(size: 80),
+              const SizedBox(height: AppSpacing.sm),
               // Title
               Text(
                 'MyVault',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       color: AppColors.textPrimaryNavy,
-                      fontSize: 32,
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
                     ),
               ),
-              const SizedBox(height: AppSpacing.xs),
+              const SizedBox(height: 2),
               Text(
                 'Your Personal Digital Vault',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -76,18 +116,22 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                 'Secure. Private. Always with you.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textMutedNavy,
+                      fontSize: 13,
                     ),
               ),
               const Spacer(),
-              // Animated Central Illustration Graphic
-              _buildAnimatedVaultGraphic(size.width),
+
+              // Circular Orbital Animated Vault Graphic
+              _buildCircularOrbitalVault(size.width),
+
               const Spacer(),
+
               // Carousel Indicator Dots
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
-                    width: 20,
+                    width: 22,
                     height: 6,
                     decoration: BoxDecoration(
                       color: AppColors.primary,
@@ -114,13 +158,18 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: AppSpacing.xl),
-              // Get Started Button
+              const SizedBox(height: AppSpacing.lg),
+
+              // Action Button: Direct to Fingerprint if vault exists, or Get Started if fresh
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    context.push('/create-vault');
+                    if (isVaultCreated) {
+                      context.push('/unlock');
+                    } else {
+                      context.push('/create-vault');
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
@@ -130,24 +179,30 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     ),
                     elevation: 0,
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
+                      Icon(
+                        isVaultCreated ? Icons.fingerprint_rounded : Icons.lock_open_rounded,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
                       Text(
-                        'Get Started',
-                        style: TextStyle(
+                        isVaultCreated ? 'Unlock with Fingerprint' : 'Get Started',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
-                      SizedBox(width: 8),
-                      Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.lg),
+              const SizedBox(height: AppSpacing.md),
             ],
           ),
         ),
@@ -155,209 +210,339 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     );
   }
 
-  Widget _buildAnimatedVaultGraphic(double screenWidth) {
+  Widget _buildCircularOrbitalVault(double screenWidth) {
+    const double orbitRx = 120.0;
+    const double orbitRy = 50.0;
+
     return AnimatedBuilder(
       animation: _animController,
       builder: (context, child) {
-        // Continuous smooth sinusoidal motion
         final progress = _animController.value;
-        final phase = progress * 2 * math.pi;
+        final baseAngle = progress * 2 * math.pi;
 
-        // Individual physics calculations for dynamic 3D-like float
-        final centerDocY = math.sin(phase) * 6.0;
-        final auraScale = 1.0 + math.sin(phase) * 0.08;
-        final auraAlpha = (80 + math.sin(phase) * 25).round().clamp(50, 115);
+        // Calculate positions for all 6 orbital components
+        final positionedItems = <_CalculatedOrbit>[];
+        for (int i = 0; i < _orbitItems.length; i++) {
+          final item = _orbitItems[i];
+          final angle = baseAngle + (i * 2 * math.pi / _orbitItems.length);
+          final x = orbitRx * math.cos(angle);
+          final y = orbitRy * math.sin(angle);
+          final z = math.sin(angle); // -1 (back) to +1 (front)
+          final scale = 0.82 + 0.26 * ((z + 1) / 2);
+          final opacity = (0.55 + 0.45 * ((z + 1) / 2)).clamp(0.0, 1.0);
 
-        final purpleNoteX = -math.sin(phase) * 4.0;
-        final purpleNoteY = math.cos(phase) * 7.0;
-        final purpleNoteAngle = 0.15 + math.cos(phase) * 0.035;
+          positionedItems.add(_CalculatedOrbit(
+            item: item,
+            x: x,
+            y: y,
+            z: z,
+            scale: scale,
+            opacity: opacity,
+          ));
+        }
 
-        final goldBadgeX = math.sin(phase) * 5.0;
-        final goldBadgeY = -math.cos(phase) * 6.0;
-        final goldBadgeAngle = -0.12 + math.sin(phase) * 0.04;
+        // Split into items behind the center card (z < 0) and in front (z >= 0)
+        final backItems = positionedItems.where((p) => p.z < 0).toList();
+        final frontItems = positionedItems.where((p) => p.z >= 0).toList();
 
-        final blueProfileX = math.cos(phase) * 4.0;
-        final blueProfileY = -math.sin(phase) * 8.0;
-        final blueProfileAngle = -0.10 + math.sin(phase) * 0.035;
+        // Gentle breathing float on center card
+        final centerFloatY = math.sin(progress * 2 * math.pi) * 5.0;
+        final auraScale = 1.0 + math.sin(progress * 2 * math.pi) * 0.08;
 
         return SizedBox(
-          height: 220,
-          width: screenWidth * 0.85,
+          height: 250,
+          width: screenWidth * 0.92,
           child: Stack(
             alignment: Alignment.center,
+            clipBehavior: Clip.none,
             children: [
-              // 1. Background soft pulsing radial aura
+              // 1. Soft pulsing radial aura in the background
               Transform.scale(
                 scale: auraScale,
                 child: Container(
-                  width: 190,
-                  height: 190,
+                  width: 210,
+                  height: 210,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppColors.primaryLight.withAlpha(auraAlpha),
-                  ),
-                ),
-              ),
-
-              // 2. Floating Card: Purple Notes (Top-Right)
-              Positioned(
-                top: 25 + purpleNoteY,
-                right: 40 + purpleNoteX,
-                child: Transform.rotate(
-                  angle: purpleNoteAngle,
-                  child: Container(
-                    width: 70,
-                    height: 85,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF7E57C2),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF7E57C2).withAlpha(50),
-                          blurRadius: 14,
-                          offset: Offset(0, 4 + purpleNoteY.abs()),
-                        ),
+                    gradient: RadialGradient(
+                      colors: [
+                        AppColors.primary.withAlpha(35),
+                        AppColors.primaryLight.withAlpha(15),
+                        Colors.transparent,
                       ],
                     ),
-                    child: const Icon(Icons.sticky_note_2_rounded, color: Colors.white, size: 30),
                   ),
                 ),
               ),
 
-              // 3. Floating Card: Gold / Yellow ID Badge (Bottom-Right)
-              Positioned(
-                bottom: 30 + goldBadgeY,
-                right: 25 + goldBadgeX,
-                child: Transform.rotate(
-                  angle: goldBadgeAngle,
-                  child: Container(
-                    width: 65,
-                    height: 75,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFA726),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFFA726).withAlpha(50),
-                          blurRadius: 14,
-                          offset: Offset(0, 4 + goldBadgeY.abs()),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.badge_rounded, color: Colors.white, size: 30),
-                  ),
-                ),
-              ),
+              // 2. Orbital components BEHIND the card
+              ...backItems.map((p) => _buildOrbitalBadge(p)),
 
-              // 4. Main Center Document Stack (Gentle breathing float)
+              // 3. Central Premium Digital Vault Card (Rich content)
               Transform.translate(
-                offset: Offset(0, centerDocY),
-                child: Container(
-                  width: 140,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: AppColors.border, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.textPrimaryNavy.withAlpha(18),
-                        blurRadius: 20 + centerDocY.abs() * 2,
-                        offset: Offset(0, 8 + centerDocY * 0.5),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            height: 28,
-                            decoration: const BoxDecoration(
-                              color: AppColors.primaryLight,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 50,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withAlpha(100),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: AppColors.border,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: 70,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: AppColors.border,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const Spacer(),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.successLight,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Icon(Icons.check, color: AppColors.success, size: 14),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
+                offset: Offset(0, centerFloatY),
+                child: _buildRichCenterCard(),
               ),
 
-              // 5. Front Left Blue Profile Card (Dynamic gentle sway)
-              Positioned(
-                left: 30 + blueProfileX,
-                bottom: 35 + blueProfileY,
-                child: Transform.rotate(
-                  angle: blueProfileAngle,
-                  child: Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF29B6F6),
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF29B6F6).withAlpha(60),
-                          blurRadius: 14,
-                          offset: Offset(0, 4 + blueProfileY.abs()),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.person_rounded, color: Colors.white, size: 30),
-                  ),
-                ),
-              ),
+              // 4. Orbital components IN FRONT of the card
+              ...frontItems.map((p) => _buildOrbitalBadge(p)),
             ],
           ),
         );
       },
     );
   }
+
+  Widget _buildOrbitalBadge(_CalculatedOrbit p) {
+    return Positioned(
+      left: (MediaQuery.of(context).size.width * 0.92 / 2) + p.x - 26,
+      top: 125 + p.y - 26,
+      child: Opacity(
+        opacity: p.opacity,
+        child: Transform.scale(
+          scale: p.scale,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  p.item.color,
+                  p.item.color.withAlpha(220),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: p.item.color.withAlpha((p.z > 0 ? 110 : 40)),
+                  blurRadius: p.z > 0 ? 14 : 6,
+                  offset: Offset(0, p.z > 0 ? 5 : 2),
+                ),
+              ],
+              border: Border.all(
+                color: Colors.white.withAlpha(200),
+                width: 1.5,
+              ),
+            ),
+            child: Icon(
+              p.item.icon,
+              color: Colors.white,
+              size: 26,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRichCenterCard() {
+    return Container(
+      width: 160,
+      height: 185,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withAlpha(45), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withAlpha(30),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: Colors.black.withAlpha(10),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row: Blue Lock Badge & AES-256 Badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryLight,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary.withAlpha(50)),
+                ),
+                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 14),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: const Color(0xFF81C784)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 9),
+                    SizedBox(width: 2),
+                    Text(
+                      'AES-256',
+                      style: TextStyle(
+                        color: Color(0xFF2E7D32),
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+
+          // Title & Subtitle
+          const Text(
+            'DIGITAL VAULT',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textPrimaryNavy,
+              fontWeight: FontWeight.w800,
+              fontSize: 10.5,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const Text(
+            'Zero-Knowledge Pass',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.textMutedNavy,
+              fontSize: 8,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Divider(height: 1, thickness: 1, color: AppColors.border),
+          const SizedBox(height: 5),
+
+          // Content Item Rows: Passwords, Documents, Cards
+          _buildCardDataRow(Icons.key_rounded, const Color(0xFF2979FF), 'Passwords', 'Protected'),
+          const SizedBox(height: 3.5),
+          _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Encrypted'),
+          const SizedBox(height: 3.5),
+          _buildCardDataRow(Icons.credit_card_rounded, const Color(0xFF00C853), 'Cards & IDs', 'Offline'),
+
+          const Spacer(),
+
+          // Bottom Security Status Bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: AppColors.success, size: 10),
+                SizedBox(width: 3),
+                Expanded(
+                  child: Text(
+                    'ACTIVE VAULT',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.textPrimaryNavy,
+                      fontSize: 7.5,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+                Text(
+                  '••••',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 7.5,
+                    color: AppColors.textMutedNavy,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCardDataRow(IconData icon, Color color, String title, String status) {
+    return Row(
+      children: [
+        Icon(icon, size: 11, color: color),
+        const SizedBox(width: 4),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimaryNavy,
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          decoration: BoxDecoration(
+            color: color.withAlpha(20),
+            borderRadius: BorderRadius.circular(4),
+          ),
+          child: Text(
+            status,
+            style: TextStyle(
+              fontSize: 7.5,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrbitalItem {
+  final IconData icon;
+  final Color color;
+  final String label;
+
+  const _OrbitalItem({
+    required this.icon,
+    required this.color,
+    required this.label,
+  });
+}
+
+class _CalculatedOrbit {
+  final _OrbitalItem item;
+  final double x;
+  final double y;
+  final double z;
+  final double scale;
+  final double opacity;
+
+  const _CalculatedOrbit({
+    required this.item,
+    required this.x,
+    required this.y,
+    required this.z,
+    required this.scale,
+    required this.opacity,
+  });
 }

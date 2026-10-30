@@ -54,10 +54,10 @@ class RouterNotifier extends ChangeNotifier {
       return null;
     }
 
-    // 2. Vault exists and is locked -> force unlock screen
+    // 2. Vault exists and is locked -> show welcome screen first, or unlock
     if (status == VaultStatus.locked) {
-      if (location != '/unlock') {
-        return '/unlock';
+      if (location != '/unlock' && location != '/welcome') {
+        return '/welcome';
       }
       return null;
     }
