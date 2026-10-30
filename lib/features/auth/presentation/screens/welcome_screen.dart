@@ -17,9 +17,12 @@ class WelcomeScreen extends ConsumerStatefulWidget {
 }
 
 class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _animController;
+    with TickerProviderStateMixin {
+  late final AnimationController _orbitController;
+  late final AnimationController _pulseController;
+  late final AnimationController _particleController;
 
+  // 8 orbital items for a richer circular animation
   static const List<_OrbitalItem> _orbitItems = [
     _OrbitalItem(
       icon: Icons.key_rounded,
@@ -47,7 +50,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
       label: 'Cards',
     ),
     _OrbitalItem(
-      icon: Icons.vpn_key_rounded,
+      icon: Icons.contacts_rounded,
+      color: Color(0xFF00BCD4),
+      label: 'Contacts',
+    ),
+    _OrbitalItem(
+      icon: Icons.note_alt_rounded,
+      color: Color(0xFFFF7043),
+      label: 'Notes',
+    ),
+    _OrbitalItem(
+      icon: Icons.security_rounded,
       color: Color(0xFF3F51B5),
       label: '2FA Keys',
     ),
@@ -56,24 +69,41 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   @override
   void initState() {
     super.initState();
-    _animController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 6000),
-    );
 
-    // In unit/widget tests, avoid infinite repeat so pumpAndSettle completes cleanly
     final isTest = Platform.environment.containsKey('FLUTTER_TEST') ||
         WidgetsBinding.instance.runtimeType.toString().toLowerCase().contains('test');
+
+    _orbitController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 10000),
+    );
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    );
+
+    _particleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 8000),
+    );
+
     if (isTest) {
-      _animController.value = 0.5;
+      _orbitController.value = 0.5;
+      _pulseController.value = 0.5;
+      _particleController.value = 0.5;
     } else {
-      _animController.repeat();
+      _orbitController.repeat();
+      _pulseController.repeat(reverse: true);
+      _particleController.repeat();
     }
   }
 
   @override
   void dispose() {
-    _animController.dispose();
+    _orbitController.dispose();
+    _pulseController.dispose();
+    _particleController.dispose();
     super.dispose();
   }
 
@@ -121,7 +151,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               ),
               const Spacer(),
 
-              // Circular Orbital Animated Vault Graphic (Enlarged)
+              // Circular Orbital Animated Vault Graphic
               _buildCircularOrbitalVault(size.width),
 
               const Spacer(),
@@ -160,7 +190,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               ),
               const SizedBox(height: AppSpacing.lg),
 
-              // Action Button: Direct to Fingerprint if vault exists, or Get Started if fresh
+              // Action Button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -211,27 +241,187 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   Widget _buildCircularOrbitalVault(double screenWidth) {
-    final double orbitRx = (screenWidth * 0.43).clamp(140.0, 172.0);
-    const double orbitRy = 65.0;
+    // True circular orbit radius
+    final double orbitRadius = (screenWidth * 0.38).clamp(120.0, 155.0);
 
+    return SizedBox(
+      height: 340,
+      width: screenWidth * 0.92,
+      child: Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          // 1. Animated pulsing rings behind everything
+          _buildPulsingRings(),
+
+          // 2. Floating particle dots
+          _buildFloatingParticles(screenWidth),
+
+          // 3. Orbital path hint ring (subtle dashed circle)
+          _buildOrbitPathRing(orbitRadius),
+
+          // 4. Back orbital items (behind center card)
+          _buildOrbitingItemsLayer(orbitRadius, screenWidth, front: false),
+
+          // 5. Central card with floating animation
+          _buildFloatingCenterCard(),
+
+          // 6. Front orbital items (in front of center card)
+          _buildOrbitingItemsLayer(orbitRadius, screenWidth, front: true),
+        ],
+      ),
+    );
+  }
+
+  /// Pulsing concentric ring animations
+  Widget _buildPulsingRings() {
     return AnimatedBuilder(
-      animation: _animController,
+      animation: _pulseController,
       builder: (context, child) {
-        final progress = _animController.value;
-        final baseAngle = progress * 2 * math.pi;
+        final pulse = _pulseController.value;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Outer ring
+            Transform.scale(
+              scale: 1.0 + pulse * 0.12,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primary.withAlpha((20 + (15 * (1 - pulse))).toInt()),
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+            // Middle ring
+            Transform.scale(
+              scale: 1.0 + pulse * 0.06,
+              child: Container(
+                width: 240,
+                height: 240,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      AppColors.primary.withAlpha((30 + (20 * pulse)).toInt()),
+                      AppColors.primaryLight.withAlpha((15 + (10 * pulse)).toInt()),
+                      Colors.transparent,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            // Inner glow
+            Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    AppColors.primary.withAlpha((25 + (15 * pulse)).toInt()),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-        // Calculate positions for all 6 orbital components
-        final positionedItems = <_CalculatedOrbit>[];
+  /// Tiny floating particle dots that orbit slowly
+  Widget _buildFloatingParticles(double screenWidth) {
+    return AnimatedBuilder(
+      animation: _particleController,
+      builder: (context, child) {
+        final progress = _particleController.value;
+        final centerX = screenWidth * 0.92 / 2;
+        const centerY = 170.0;
+
+        // 12 particles at different radii and speeds
+        final particles = <Widget>[];
+        for (int i = 0; i < 12; i++) {
+          final radius = 60.0 + (i * 15.0) % 100;
+          final speed = 1.0 + (i % 3) * 0.5;
+          final angle = progress * 2 * math.pi * speed + (i * math.pi / 6);
+          final x = centerX + radius * math.cos(angle) - 2;
+          final y = centerY + radius * math.sin(angle) * 0.7 - 2;
+          final alpha = (0.15 + 0.25 * math.sin(progress * 2 * math.pi + i)).clamp(0.0, 1.0);
+
+          particles.add(
+            Positioned(
+              left: x,
+              top: y,
+              child: Container(
+                width: 3 + (i % 3).toDouble(),
+                height: 3 + (i % 3).toDouble(),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: [
+                    AppColors.primary,
+                    const Color(0xFF8E24AA),
+                    const Color(0xFF00BCD4),
+                    const Color(0xFFFFA000),
+                  ][i % 4]
+                      .withAlpha((alpha * 255).toInt()),
+                ),
+              ),
+            ),
+          );
+        }
+        return Stack(children: particles);
+      },
+    );
+  }
+
+  /// Subtle orbit path circle
+  Widget _buildOrbitPathRing(double radius) {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final pulse = _pulseController.value;
+        return CustomPaint(
+          size: Size(radius * 2 + 20, radius * 2 + 20),
+          painter: _OrbitPathPainter(
+            radius: radius,
+            opacity: 0.08 + pulse * 0.04,
+          ),
+        );
+      },
+    );
+  }
+
+  /// Orbiting items — renders only back (z<0) or front (z>=0) items
+  Widget _buildOrbitingItemsLayer(double orbitRadius, double screenWidth, {required bool front}) {
+    return AnimatedBuilder(
+      animation: _orbitController,
+      builder: (context, child) {
+        final progress = _orbitController.value;
+        final baseAngle = progress * 2 * math.pi;
+        final centerX = screenWidth * 0.92 / 2;
+        const centerY = 170.0;
+
+        final items = <_CalculatedOrbit>[];
         for (int i = 0; i < _orbitItems.length; i++) {
           final item = _orbitItems[i];
           final angle = baseAngle + (i * 2 * math.pi / _orbitItems.length);
-          final x = orbitRx * math.cos(angle);
-          final y = orbitRy * math.sin(angle);
-          final z = math.sin(angle); // -1 (back) to +1 (front)
-          final scale = 0.84 + 0.26 * ((z + 1) / 2);
-          final opacity = (0.60 + 0.40 * ((z + 1) / 2)).clamp(0.0, 1.0);
+          final x = orbitRadius * math.cos(angle);
+          final y = orbitRadius * math.sin(angle);
+          final z = math.sin(angle);
+          final scale = 0.72 + 0.38 * ((z + 1) / 2);
+          final opacity = (0.45 + 0.55 * ((z + 1) / 2)).clamp(0.0, 1.0);
 
-          positionedItems.add(_CalculatedOrbit(
+          // Filter: only items on the requested side
+          if (front && z < 0) continue;
+          if (!front && z >= 0) continue;
+
+          items.add(_CalculatedOrbit(
             item: item,
             x: x,
             y: y,
@@ -241,95 +431,71 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           ));
         }
 
-        // Split into items behind the center card (z < 0) and in front (z >= 0)
-        final backItems = positionedItems.where((p) => p.z < 0).toList();
-        final frontItems = positionedItems.where((p) => p.z >= 0).toList();
+        // Sort by z so items further back render first
+        items.sort((a, b) => a.z.compareTo(b.z));
 
-        // Gentle breathing float on center card
-        final centerFloatY = math.sin(progress * 2 * math.pi) * 5.0;
-        final auraScale = 1.0 + math.sin(progress * 2 * math.pi) * 0.08;
-
-        return SizedBox(
-          height: 310,
-          width: screenWidth * 0.92,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              // 1. Soft pulsing radial aura in the background (enlarged)
-              Transform.scale(
-                scale: auraScale,
-                child: Container(
-                  width: 270,
-                  height: 270,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        AppColors.primary.withAlpha(35),
-                        AppColors.primaryLight.withAlpha(15),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // 2. Orbital components BEHIND the card
-              ...backItems.map((p) => _buildOrbitalBadge(p, screenWidth)),
-
-              // 3. Central Premium Digital Vault Card (Rich enlarged content)
-              Transform.translate(
-                offset: Offset(0, centerFloatY),
-                child: _buildRichCenterCard(),
-              ),
-
-              // 4. Orbital components IN FRONT of the card
-              ...frontItems.map((p) => _buildOrbitalBadge(p, screenWidth)),
-            ],
-          ),
+        return Stack(
+          children: items.map((p) => _buildOrbitalBadge(p, centerX, centerY)).toList(),
         );
       },
     );
   }
 
-  Widget _buildOrbitalBadge(_CalculatedOrbit p, double screenWidth) {
+  Widget _buildOrbitalBadge(_CalculatedOrbit p, double centerX, double centerY) {
+    const double badgeSize = 54;
     return Positioned(
-      left: (screenWidth * 0.92 / 2) + p.x - 30,
-      top: 155 + p.y - 30,
+      left: centerX + p.x - badgeSize / 2,
+      top: centerY + p.y - badgeSize / 2,
       child: Opacity(
         opacity: p.opacity,
         child: Transform.scale(
           scale: p.scale,
           child: Container(
-            width: 60,
-            height: 60,
+            width: badgeSize,
+            height: badgeSize,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
                   p.item.color,
-                  p.item.color.withAlpha(220),
+                  p.item.color.withAlpha(200),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: p.item.color.withAlpha((p.z > 0 ? 115 : 45)),
-                  blurRadius: p.z > 0 ? 16 : 7,
+                  color: p.item.color.withAlpha(p.z > 0 ? 120 : 40),
+                  blurRadius: p.z > 0 ? 18 : 6,
                   offset: Offset(0, p.z > 0 ? 6 : 2),
                 ),
               ],
               border: Border.all(
-                color: Colors.white.withAlpha(220),
-                width: 1.8,
+                color: Colors.white.withAlpha(p.z > 0 ? 230 : 150),
+                width: 2.0,
               ),
             ),
-            child: Icon(
-              p.item.icon,
-              color: Colors.white,
-              size: 28,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  p.item.icon,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  p.item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 6.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -337,43 +503,58 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     );
   }
 
+  /// Floating center card with breathing animation
+  Widget _buildFloatingCenterCard() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        final pulse = _pulseController.value;
+        final floatY = math.sin(pulse * math.pi) * 6.0;
+        return Transform.translate(
+          offset: Offset(0, floatY),
+          child: _buildRichCenterCard(),
+        );
+      },
+    );
+  }
+
   Widget _buildRichCenterCard() {
     return Container(
-      width: 182,
-      height: 215,
+      width: 170,
+      height: 200,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: AppColors.primary.withAlpha(50), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withAlpha(35),
-            blurRadius: 26,
-            offset: const Offset(0, 10),
+            color: AppColors.primary.withAlpha(40),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
           ),
           BoxShadow(
-            color: Colors.black.withAlpha(12),
+            color: Colors.black.withAlpha(10),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Row: Blue Lock Badge & AES-256 Badge
+          // Header Row: Lock Badge & Secured Badge
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.all(5.5),
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
                   color: AppColors.primaryLight,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.primary.withAlpha(50)),
                 ),
-                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 15),
+                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 14),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -386,12 +567,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 10),
-                    SizedBox(width: 2.5),
+                    SizedBox(width: 2),
                     Text(
                       'Secured',
                       style: TextStyle(
                         color: Color(0xFF2E7D32),
-                        fontSize: 9.0,
+                        fontSize: 8.5,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -410,7 +591,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             style: TextStyle(
               color: AppColors.textPrimaryNavy,
               fontWeight: FontWeight.w800,
-              fontSize: 11.5,
+              fontSize: 11,
               letterSpacing: 0.6,
             ),
           ),
@@ -420,7 +601,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: AppColors.textMutedNavy,
-              fontSize: 8.8,
+              fontSize: 8.5,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -428,16 +609,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           const Divider(height: 1, thickness: 1, color: AppColors.border),
           const SizedBox(height: 5),
 
-          // Content Item Rows: Passwords, Documents, Cards
+          // Content Item Rows
           _buildCardDataRow(Icons.key_rounded, const Color(0xFF2979FF), 'Passwords', 'Protected'),
-          const SizedBox(height: 4.5),
+          const SizedBox(height: 4),
           _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Protected'),
-          const SizedBox(height: 4.5),
+          const SizedBox(height: 4),
           _buildCardDataRow(Icons.credit_card_rounded, const Color(0xFF00C853), 'Cards & IDs', 'Offline'),
 
           const Spacer(),
 
-          // Bottom Security Status Bar
+          // Bottom Status Bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
             decoration: BoxDecoration(
@@ -514,6 +695,46 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         ),
       ],
     );
+  }
+}
+
+/// Custom painter for the subtle orbit path circle
+class _OrbitPathPainter extends CustomPainter {
+  final double radius;
+  final double opacity;
+
+  _OrbitPathPainter({required this.radius, required this.opacity});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..color = AppColors.primary.withAlpha((opacity * 255).toInt())
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    // Draw dashed circle
+    const dashLength = 6.0;
+    const gapLength = 8.0;
+    final circumference = 2 * math.pi * radius;
+    final totalDashes = (circumference / (dashLength + gapLength)).floor();
+
+    for (int i = 0; i < totalDashes; i++) {
+      final startAngle = (i * (dashLength + gapLength)) / radius;
+      final sweepAngle = dashLength / radius;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle,
+        sweepAngle,
+        false,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _OrbitPathPainter oldDelegate) {
+    return oldDelegate.opacity != opacity;
   }
 }
 

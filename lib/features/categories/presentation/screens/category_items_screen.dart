@@ -26,11 +26,54 @@ class CategoryItemsScreen extends ConsumerStatefulWidget {
 class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
   final _searchController = TextEditingController();
   String _selectedSubcategory = 'All';
+  bool _isSelectionMode = false;
+  final Set<String> _selectedItemIds = <String>{};
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _confirmBulkDelete(BuildContext context) async {
+    final count = _selectedItemIds.length;
+    if (count == 0) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete $count Items?'),
+        content: Text('Are you sure you want to permanently delete $count selected items? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      final idsToDelete = List<String>.from(_selectedItemIds);
+      setState(() {
+        _isSelectionMode = false;
+        _selectedItemIds.clear();
+      });
+      await ref.read(vaultItemsProvider.notifier).removeItems(idsToDelete);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Deleted $count items')),
+      );
+    }
   }
 
   Future<void> _uploadVcfFile(BuildContext context) async {
@@ -179,62 +222,133 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       filteredItems.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isFavouritesCategory ? 'Favourites' : category.displayName,
-              style: const TextStyle(
-                color: AppColors.textPrimaryNavy,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+    return PopScope(
+      canPop: !_isSelectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (_isSelectionMode) {
+          setState(() {
+            _isSelectionMode = false;
+            _selectedItemIds.clear();
+          });
+        }
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: _isSelectionMode
+            ? AppBar(
+                backgroundColor: Colors.white,
+                leading: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: AppColors.textPrimaryNavy),
+                  onPressed: () {
+                    setState(() {
+                      _isSelectionMode = false;
+                      _selectedItemIds.clear();
+                    });
+                  },
+                ),
+                title: Text(
+                  '${_selectedItemIds.length} selected',
+                  style: const TextStyle(
+                    color: AppColors.textPrimaryNavy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                actions: [
+                  IconButton(
+                    icon: Icon(
+                      _selectedItemIds.length == filteredItems.length && filteredItems.isNotEmpty
+                          ? Icons.deselect_rounded
+                          : Icons.select_all_rounded,
+                      color: AppColors.primary,
+                    ),
+                    tooltip: _selectedItemIds.length == filteredItems.length && filteredItems.isNotEmpty
+                        ? 'Deselect All'
+                        : 'Select All',
+                    onPressed: () {
+                      setState(() {
+                        if (_selectedItemIds.length == filteredItems.length) {
+                          _selectedItemIds.clear();
+                        } else {
+                          _selectedItemIds.addAll(filteredItems.map((e) => e.id));
+                        }
+                      });
+                    },
+                  ),
+                  if (_selectedItemIds.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                      tooltip: 'Delete Selected',
+                      onPressed: () => _confirmBulkDelete(context),
+                    ),
+                  const SizedBox(width: 8),
+                ],
+              )
+            : AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                  onPressed: () => context.pop(),
+                ),
+                title: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isFavouritesCategory ? 'Favourites' : category.displayName,
+                      style: const TextStyle(
+                        color: AppColors.textPrimaryNavy,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${filteredItems.length} items',
+                      style: const TextStyle(
+                        color: AppColors.textMutedNavy,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  if (filteredItems.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.checklist_rounded, color: AppColors.primary, size: 24),
+                      tooltip: 'Select items',
+                      onPressed: () {
+                        setState(() {
+                          _isSelectionMode = true;
+                        });
+                      },
+                    ),
+                  if (!isFavouritesCategory && category == VaultCategory.contacts)
+                    IconButton(
+                      icon: const Icon(Icons.file_upload_outlined, color: AppColors.primary, size: 24),
+                      tooltip: 'Upload .vcf File',
+                      onPressed: () => _uploadVcfFile(context),
+                    ),
+                  if (!isFavouritesCategory)
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
+                      onPressed: () {
+                        if (category == VaultCategory.passwords) {
+                          context.push('/add-item');
+                        } else if (category == VaultCategory.idCards) {
+                          context.push('/add-id');
+                        } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                          context.push('/add-document');
+                        } else if (category == VaultCategory.notes) {
+                          context.push('/add-note');
+                        } else if (category == VaultCategory.contacts) {
+                          context.push('/add-contact');
+                        } else {
+                          context.push('/add-item');
+                        }
+                      },
+                    ),
+                  const SizedBox(width: 8),
+                ],
               ),
-            ),
-            Text(
-              '${filteredItems.length} items',
-              style: const TextStyle(
-                color: AppColors.textMutedNavy,
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          if (!isFavouritesCategory && category == VaultCategory.contacts)
-            IconButton(
-              icon: const Icon(Icons.file_upload_outlined, color: AppColors.primary, size: 24),
-              tooltip: 'Upload .vcf File',
-              onPressed: () => _uploadVcfFile(context),
-            ),
-          if (!isFavouritesCategory)
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
-              onPressed: () {
-                if (category == VaultCategory.passwords) {
-                  context.push('/add-item');
-                } else if (category == VaultCategory.idCards) {
-                  context.push('/add-id');
-                } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
-                  context.push('/add-document');
-                } else if (category == VaultCategory.notes) {
-                  context.push('/add-note');
-                } else if (category == VaultCategory.contacts) {
-                  context.push('/add-contact');
-                } else {
-                  context.push('/add-item');
-                }
-              },
-            ),
-          const SizedBox(width: 8),
-        ],
-      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -313,10 +427,41 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                       itemCount: filteredItems.length,
                       itemBuilder: (context, index) {
                         final item = filteredItems[index];
+                        final isSelected = _selectedItemIds.contains(item.id);
+
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
+                          color: isSelected ? const Color(0xFFEBF3FF) : Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: isSelected ? AppColors.primary : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
                           child: ListTile(
+                            onLongPress: () {
+                              if (!_isSelectionMode) {
+                                setState(() {
+                                  _isSelectionMode = true;
+                                  _selectedItemIds.add(item.id);
+                                });
+                              }
+                            },
                             onTap: () {
+                              if (_isSelectionMode) {
+                                setState(() {
+                                  if (isSelected) {
+                                    _selectedItemIds.remove(item.id);
+                                    if (_selectedItemIds.isEmpty) {
+                                      _isSelectionMode = false;
+                                    }
+                                  } else {
+                                    _selectedItemIds.add(item.id);
+                                  }
+                                });
+                                return;
+                              }
                               if (category == VaultCategory.passwords) {
                                 context.push('/password-details/${item.id}');
                               } else if (category == VaultCategory.idCards) {
@@ -331,7 +476,31 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                 _showItemDetailsDialog(context, item);
                               }
                             },
-                            leading: _buildItemAvatar(item),
+                            leading: _isSelectionMode
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Checkbox(
+                                        value: isSelected,
+                                        activeColor: AppColors.primary,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                        onChanged: (_) {
+                                          setState(() {
+                                            if (isSelected) {
+                                              _selectedItemIds.remove(item.id);
+                                              if (_selectedItemIds.isEmpty) {
+                                                _isSelectionMode = false;
+                                              }
+                                            } else {
+                                              _selectedItemIds.add(item.id);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                      _buildItemAvatar(item),
+                                    ],
+                                  )
+                                : _buildItemAvatar(item),
                             title: Text(
                               item.title,
                               style: const TextStyle(
@@ -371,7 +540,9 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
-                            trailing: Row(
+                            trailing: _isSelectionMode
+                                ? null
+                                : Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 if (category == VaultCategory.documents || category == VaultCategory.photos)
@@ -487,7 +658,8 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildItemAvatar(VaultItem item) {

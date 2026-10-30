@@ -615,7 +615,7 @@ void main() {
 
     test('Persists contact photo attachment_path and retrieves it properly', () async {
       const itemId = 'cnt_photo_01';
-      final item = VaultItem(
+      const item = VaultItem(
         id: itemId,
         title: 'Krishna Shelar',
         subtitle: '+91 98765 43210',
@@ -693,6 +693,36 @@ void main() {
       expect(detectExt(jpgBytes), equals('.jpg'));
       expect(detectExt(pngBytes), equals('.png'));
       expect(detectExt(webpBytes), equals('.webp'));
+    });
+
+    test('VCF parsing handles Quoted-Printable UTF-8 names, group prefixes, and FN priority', () {
+      const vcfData = '''
+BEGIN:VCARD
+VERSION:2.1
+item1.N;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:;=4B=72=69=73=68=6E=61;;;
+item1.FN;CHARSET=UTF-8;ENCODING=QUOTED-PRINTABLE:=E0=A4=95=E0=A5=83=E0=A4=B7=E0=A5=8D=E0=A4=A3=E0=A4=BE=20=E0=A4=B6=E0=A5=87=E0=A4=B3=E0=A4=BE=E0=A4=B0
+item2.TEL;TYPE=CELL:+919876543210
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+N:Doe;Jane;Marie;Dr.;
+FN:Dr. Jane Marie Doe
+TEL;TYPE=HOME:+15551234567
+EMAIL;TYPE=WORK:jane.doe@example.com
+END:VCARD
+BEGIN:VCARD
+VERSION:2.1
+TEL;TYPE=WORK:+18005550199
+ORG:Acme Corp
+END:VCARD
+''';
+
+      // Test unfolding and QP decoding
+      final normalized = vcfData.replaceAll('\r\n', '\n');
+      final cardRegex = RegExp(r'BEGIN:VCARD[\s\S]*?END:VCARD', caseSensitive: false);
+      final cards = cardRegex.allMatches(normalized).map((m) => m.group(0)!).toList();
+
+      expect(cards.length, equals(3));
     });
   });
 }

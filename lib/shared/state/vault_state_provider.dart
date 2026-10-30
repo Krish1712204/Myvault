@@ -383,6 +383,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     String? secondaryEmail,
     String? attachmentPath,
     bool isFavourite = false,
+    bool refresh = true,
   }) async {
     final isNew = id == null || id.isEmpty;
     final itemId = isNew ? 'cnt_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}' : id;
@@ -439,7 +440,61 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       await _repository.updateItem(item, contactEntry: contactEntry);
     }
 
-    await loadItems();
+    if (refresh) {
+      await loadItems();
+    }
+  }
+
+  /// Decodes Quoted-Printable encoded strings (vCard 2.1 standard) into UTF-8.
+  static String _decodeQuotedPrintable(String input) {
+    final cleaned = input.replaceAll(RegExp(r'=+(?:\r\n|\r|\n)'), '');
+    final bytes = <int>[];
+    int i = 0;
+    while (i < cleaned.length) {
+      if (cleaned[i] == '=' && i + 2 < cleaned.length) {
+        final hex = cleaned.substring(i + 1, i + 3);
+        final byteVal = int.tryParse(hex, radix: 16);
+        if (byteVal != null) {
+          bytes.add(byteVal);
+          i += 3;
+          continue;
+        }
+      }
+      bytes.add(cleaned.codeUnitAt(i));
+      i++;
+    }
+    try {
+      return utf8.decode(bytes, allowMalformed: true);
+    } catch (_) {
+      return String.fromCharCodes(bytes);
+    }
+  }
+
+  /// Decodes and cleans a vCard property value (handles Quoted-Printable, UTF-8, and escapes).
+  static String _cleanVcfValue(String rawValue, String keyOrParams) {
+    String val = rawValue;
+    final upperKey = keyOrParams.toUpperCase();
+    final isQP = upperKey.contains('QUOTED-PRINTABLE') ||
+        upperKey.contains('ENCODING=QP') ||
+        RegExp(r'=[0-9A-Fa-f]{2}').hasMatch(val);
+
+    if (isQP) {
+      val = _decodeQuotedPrintable(val);
+    }
+
+    val = val
+        .replaceAll(r'\,', ',')
+        .replaceAll(r'\;', ';')
+        .replaceAll(r'\:', ':')
+        .replaceAll(r'\\', r'\')
+        .replaceAll(r'\n', ' ')
+        .replaceAll(r'\N', ' ')
+        .trim();
+
+    if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
+      val = val.substring(1, val.length - 1).trim();
+    }
+    return val;
   }
 
   /// Bulk imports contacts from a VCF string, parsing names, phones, emails, and base64 photos,
@@ -451,22 +506,44 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       throw StateError('Vault is locked. Cannot import contacts.');
     }
 
-    // Unfold multiline fields (RFC 2425/2426/6350)
-    final unfolded = vcfContent.replaceAll(RegExp(r'\r?\n[ \t]'), '');
-    final cardRegex = RegExp(r'BEGIN:VCARD[\s\S]*?END:VCARD', caseSensitive: false);
-    final matches = cardRegex.allMatches(unfolded);
+    if (vcfContent.trim().isEmpty) return 0;
 
-    if (matches.isEmpty) {
+    // 1. Normalize line endings and strip BOM
+    var normalized = vcfContent.replaceFirst('\uFEFF', '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    // 2. Unfold multiline Quoted-Printable lines that end with '='
+    normalized = normalized.replaceAll(RegExp(r'=+\n'), '');
+
+    // 3. Unfold RFC 2425/2426/6350 whitespace continuation lines (space or tab)
+    normalized = normalized.replaceAll(RegExp(r'\n[ \t]'), '');
+
+    // 4. Extract individual vCards
+    final cardRegex = RegExp(r'BEGIN:VCARD[\s\S]*?END:VCARD', caseSensitive: false);
+    var cardMatches = cardRegex.allMatches(normalized).map((m) => m.group(0)!).toList();
+
+    // Fallback if cards lack END:VCARD
+    final beginCount = RegExp(r'BEGIN:VCARD', caseSensitive: false).allMatches(normalized).length;
+    if (cardMatches.length < beginCount) {
+      final blocks = normalized.split(RegExp(r'BEGIN:VCARD', caseSensitive: false));
+      cardMatches = blocks
+          .where((b) => b.trim().isNotEmpty)
+          .map((b) => 'BEGIN:VCARD$b')
+          .toList();
+    }
+
+    if (cardMatches.isEmpty) {
       return 0;
     }
 
     final parsedList = <_ParsedVcfContact>[];
 
-    for (final match in matches) {
-      final cardText = match.group(0)!;
-      final lines = cardText.split(RegExp(r'\r?\n'));
+    for (final cardText in cardMatches) {
+      final lines = cardText.split('\n');
 
-      String fullName = '';
+      String formattedName = '';
+      String structuredName = '';
+      String organization = '';
+      String nickname = '';
       String phoneNumber = '';
       String? email;
       Uint8List? photoBytes;
@@ -478,29 +555,46 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
         final colonIndex = line.indexOf(':');
         if (colonIndex == -1) continue;
 
-        final key = line.substring(0, colonIndex).toUpperCase();
-        final value = line.substring(colonIndex + 1).trim();
+        var keyPart = line.substring(0, colonIndex).trim();
+        final rawVal = line.substring(colonIndex + 1).trim();
+        if (rawVal.isEmpty) continue;
 
-        if (key == 'FN' || key.startsWith('FN;')) {
-          if (fullName.isEmpty) fullName = value;
-        } else if ((key == 'N' || key.startsWith('N;')) && fullName.isEmpty) {
-          final parts = value.split(';').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
-          if (parts.length >= 2) {
-            fullName = '${parts[1]} ${parts[0]}';
-          } else if (parts.isNotEmpty) {
-            fullName = parts[0];
+        // Strip group prefix (e.g. item1.FN -> FN, item2.TEL -> TEL)
+        if (keyPart.contains('.')) {
+          final dotIdx = keyPart.indexOf('.');
+          keyPart = keyPart.substring(dotIdx + 1).trim();
+        }
+
+        final keyUpper = keyPart.toUpperCase();
+        final decodedVal = _cleanVcfValue(rawVal, keyPart);
+
+        if (keyUpper == 'FN' || keyUpper.startsWith('FN;') || keyUpper.startsWith('FN:')) {
+          if (decodedVal.isNotEmpty) {
+            formattedName = decodedVal;
           }
-        } else if (key == 'TEL' || key.startsWith('TEL;')) {
-          if (phoneNumber.isEmpty) {
-            phoneNumber = value;
+        } else if (keyUpper == 'N' || keyUpper.startsWith('N;') || keyUpper.startsWith('N:')) {
+          if (decodedVal.isNotEmpty) {
+            structuredName = decodedVal;
           }
-        } else if (key == 'EMAIL' || key.startsWith('EMAIL;')) {
-          if (email == null || email.isEmpty) {
-            email = value;
+        } else if (keyUpper == 'ORG' || keyUpper.startsWith('ORG;') || keyUpper.startsWith('ORG:')) {
+          if (organization.isEmpty && decodedVal.isNotEmpty) {
+            organization = decodedVal.split(';').first.trim();
           }
-        } else if (key.startsWith('PHOTO')) {
+        } else if (keyUpper == 'NICKNAME' || keyUpper.startsWith('NICKNAME;')) {
+          if (nickname.isEmpty && decodedVal.isNotEmpty) {
+            nickname = decodedVal;
+          }
+        } else if (keyUpper == 'TEL' || keyUpper.startsWith('TEL;') || keyUpper.startsWith('TEL:')) {
+          if (phoneNumber.isEmpty && decodedVal.isNotEmpty) {
+            phoneNumber = decodedVal;
+          }
+        } else if (keyUpper == 'EMAIL' || keyUpper.startsWith('EMAIL;') || keyUpper.startsWith('EMAIL:')) {
+          if ((email == null || email.isEmpty) && decodedVal.isNotEmpty) {
+            email = decodedVal;
+          }
+        } else if (keyUpper.startsWith('PHOTO')) {
           try {
-            var base64Str = value;
+            var base64Str = rawVal;
             if (base64Str.contains(',')) {
               base64Str = base64Str.split(',').last;
             }
@@ -512,16 +606,53 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
         }
       }
 
-      if (fullName.isEmpty) {
-        if (phoneNumber.isNotEmpty) {
-          fullName = phoneNumber;
-        } else {
-          continue;
+      // Determine Contact Name with strict priority:
+      // 1. FN (Formatted Name is canonical)
+      // 2. Structured N (Prefix + First + Middle + Last + Suffix)
+      // 3. Nickname
+      // 4. Organization
+      // 5. Phone Number
+      // 6. Email
+      String contactName = '';
+
+      if (formattedName.isNotEmpty) {
+        contactName = formattedName;
+      } else if (structuredName.isNotEmpty) {
+        final nParts = structuredName.split(';');
+        final lastName = nParts.isNotEmpty ? nParts[0].trim() : '';
+        final firstName = nParts.length > 1 ? nParts[1].trim() : '';
+        final middleName = nParts.length > 2 ? nParts[2].trim() : '';
+        final prefix = nParts.length > 3 ? nParts[3].trim() : '';
+        final suffix = nParts.length > 4 ? nParts[4].trim() : '';
+        final constructed = [prefix, firstName, middleName, lastName, suffix]
+            .where((p) => p.isNotEmpty)
+            .join(' ')
+            .trim();
+        if (constructed.isNotEmpty) {
+          contactName = constructed;
         }
       }
 
+      if (contactName.isEmpty && nickname.isNotEmpty) {
+        contactName = nickname;
+      }
+      if (contactName.isEmpty && organization.isNotEmpty) {
+        contactName = organization;
+      }
+      if (contactName.isEmpty && phoneNumber.isNotEmpty) {
+        contactName = phoneNumber;
+      }
+      if (contactName.isEmpty && email != null && email.isNotEmpty) {
+        contactName = email;
+      }
+
+      // Skip only if record has zero identifiers
+      if (contactName.isEmpty && phoneNumber.isEmpty && (email == null || email.isEmpty)) {
+        continue;
+      }
+
       parsedList.add(_ParsedVcfContact(
-        fullName: fullName,
+        fullName: contactName,
         phoneNumber: phoneNumber,
         email: email,
         photoBytes: photoBytes,
@@ -553,6 +684,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
         phoneNumber: contact.phoneNumber,
         email: contact.email,
         attachmentPath: attachmentPath,
+        refresh: false,
       );
       count++;
     }
@@ -593,6 +725,20 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       await loadItems();
     } catch (_) {
       state = state.where((item) => item.id != id).toList();
+    }
+  }
+
+  /// Deletes multiple items from the encrypted database in bulk
+  Future<void> removeItems(Iterable<String> ids) async {
+    final idSet = ids.toSet();
+    if (idSet.isEmpty) return;
+    try {
+      for (final id in idSet) {
+        await _repository.deleteItem(id);
+      }
+      await loadItems();
+    } catch (_) {
+      state = state.where((item) => !idSet.contains(item.id)).toList();
     }
   }
 }
