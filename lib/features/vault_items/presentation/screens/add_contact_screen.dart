@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -29,8 +28,16 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
 
   bool _initialized = false;
   bool _isSaving = false;
-  bool _isImportingVcf = false;
   bool _isFavourite = false;
+  String _selectedCategory = 'Personal';
+
+  static const List<String> _categories = [
+    'Personal',
+    'Work',
+    'Family',
+    'Emergency',
+    'Other',
+  ];
 
   Uint8List? _photoBytes;
   String? _existingAttachmentPath;
@@ -57,6 +64,9 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
         _emailController.text = item.email ?? item.username ?? '';
         _existingAttachmentPath = item.attachmentPath;
         _isFavourite = item.isFavourite;
+        if (item.subcategory != null && item.subcategory!.isNotEmpty) {
+          _selectedCategory = item.subcategory!;
+        }
       }
     }
   }
@@ -101,82 +111,6 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
     });
   }
 
-  Future<void> _uploadVcfFile() async {
-    setState(() => _isImportingVcf = true);
-    try {
-      final files = await FilePicker.pickFiles(
-        type: FileType.any,
-      );
-      if (files.isNotEmpty) {
-        final file = files.first;
-        final bytes = await file.readAsBytes();
-        final content = utf8.decode(bytes, allowMalformed: true);
-
-        // Bulk import contacts from the VCF string in ascending order
-        final count = await ref.read(vaultItemsProvider.notifier).importContactsFromVcf(content);
-
-        if (!mounted) return;
-        if (count > 0) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Successfully imported $count contacts in ascending order!'),
-              backgroundColor: AppColors.success,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          context.pop();
-        } else {
-          // If no BEGIN:VCARD block was found, try filling current form fields
-          _parseSingleVCard(content);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Loaded contact details into form'),
-              backgroundColor: AppColors.primary,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to import .vcf: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isImportingVcf = false);
-      }
-    }
-  }
-
-  void _parseSingleVCard(String vcf) {
-    final lines = vcf.split(RegExp(r'\r?\n'));
-    for (final rawLine in lines) {
-      final line = rawLine.trim();
-      if (line.startsWith('FN:')) {
-        _nameController.text = line.substring(3).trim();
-      } else if (line.startsWith('N:') && _nameController.text.isEmpty) {
-        final parts = line.substring(2).split(';');
-        final nameParts = parts.reversed.where((p) => p.trim().isNotEmpty).toList();
-        _nameController.text = nameParts.join(' ').trim();
-      } else if (line.startsWith('TEL') && line.contains(':')) {
-        final val = line.split(':').last.trim();
-        if (_phoneController.text.isEmpty) {
-          _phoneController.text = val;
-        }
-      } else if (line.startsWith('EMAIL') && line.contains(':')) {
-        final val = line.split(':').last.trim();
-        if (_emailController.text.isEmpty) {
-          _emailController.text = val;
-        }
-      }
-    }
-    setState(() {});
-  }
-
   Future<void> _saveContact() async {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
@@ -200,6 +134,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
             phoneNumber: _phoneController.text.trim(),
             email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
             attachmentPath: attachmentPath,
+            category: _selectedCategory,
             isFavourite: _isFavourite,
           );
 
@@ -291,73 +226,6 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // VCF Bulk Upload Option Card
-                Card(
-                  elevation: 0,
-                  color: AppColors.primaryLight.withAlpha(90),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(color: AppColors.primary.withAlpha(60)),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.file_upload_outlined, color: Colors.white, size: 24),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Upload .vcf File',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: AppColors.textPrimaryNavy,
-                                ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Import all contacts in ascending order',
-                                style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          onPressed: _isImportingVcf ? null : _uploadVcfFile,
-                          child: _isImportingVcf
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                  ),
-                                )
-                              : const Text('Upload', style: TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-
                 // Contact Photo Picker & Live Preview
                 Center(
                   child: Column(
@@ -508,6 +376,45 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                             prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMutedNavy),
                             fillColor: Colors.white,
                           ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Contact Category / Label
+                        const Text(
+                          'Category',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimaryNavy,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _categories.map((cat) {
+                            final isSelected = _selectedCategory.toLowerCase() == cat.toLowerCase();
+                            return ChoiceChip(
+                              label: Text(cat),
+                              selected: isSelected,
+                              onSelected: (_) => setState(() => _selectedCategory = cat),
+                              selectedColor: AppColors.primary,
+                              backgroundColor: Colors.white,
+                              labelStyle: TextStyle(
+                                color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                fontSize: 13,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                side: BorderSide(
+                                  color: isSelected ? AppColors.primary : AppColors.border,
+                                ),
+                              ),
+                              showCheckmark: false,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            );
+                          }).toList(),
                         ),
                       ],
                     ),

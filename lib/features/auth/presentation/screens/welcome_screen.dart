@@ -503,197 +503,79 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     );
   }
 
-  /// Floating center card with breathing animation
+  /// Floating center blue vault button with breathing animation
   Widget _buildFloatingCenterCard() {
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, child) {
         final pulse = _pulseController.value;
-        final floatY = math.sin(pulse * math.pi) * 6.0;
+        final floatY = math.sin(pulse * math.pi) * 5.0;
         return Transform.translate(
           offset: Offset(0, floatY),
-          child: _buildRichCenterCard(),
+          child: _buildCenterBlueVaultButton(),
         );
       },
     );
   }
 
-  Widget _buildRichCenterCard() {
+  Widget _buildCenterBlueVaultButton() {
     return Container(
-      width: 170,
-      height: 200,
+      width: 84,
+      height: 84,
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.primary.withAlpha(50), width: 1.5),
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF2979FF),
+            Color(0xFF1565C0),
+            Color(0xFF0D47A1),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withAlpha(40),
-            blurRadius: 30,
-            offset: const Offset(0, 12),
+            color: const Color(0xFF2979FF).withAlpha(140),
+            blurRadius: 28,
+            spreadRadius: 3,
+            offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withAlpha(30),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(
+          color: Colors.white.withAlpha(230),
+          width: 3.0,
+        ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          // Header Row: Lock Badge & Secured Badge
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.primary.withAlpha(50)),
-                ),
-                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 14),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFF81C784)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 10),
-                    SizedBox(width: 2),
-                    Text(
-                      'Secured',
-                      style: TextStyle(
-                        color: Color(0xFF2E7D32),
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 5),
-
-          // Title & Subtitle
-          const Text(
-            'DIGITAL VAULT',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.textPrimaryNavy,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              letterSpacing: 0.6,
-            ),
-          ),
-          const Text(
-            'Private & Offline',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.textMutedNavy,
-              fontSize: 8.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 5),
-          const Divider(height: 1, thickness: 1, color: AppColors.border),
-          const SizedBox(height: 5),
-
-          // Content Item Rows
-          _buildCardDataRow(Icons.key_rounded, const Color(0xFF2979FF), 'Passwords', 'Protected'),
-          const SizedBox(height: 4),
-          _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Protected'),
-          const SizedBox(height: 4),
-          _buildCardDataRow(Icons.credit_card_rounded, const Color(0xFF00C853), 'Cards & IDs', 'Offline'),
-
-          const Spacer(),
-
-          // Bottom Status Bar
+          // Inner soft radial highlight
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            width: 70,
+            height: 70,
             decoration: BoxDecoration(
-              color: AppColors.background,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.border),
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  Colors.white.withAlpha(50),
+                  Colors.transparent,
+                ],
+              ),
             ),
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: AppColors.success, size: 11),
-                SizedBox(width: 3.5),
-                Expanded(
-                  child: Text(
-                    'ACTIVE VAULT',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: AppColors.textPrimaryNavy,
-                      fontSize: 8.0,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-                Text(
-                  '•••• ••••',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 8.0,
-                    color: AppColors.textMutedNavy,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+          ),
+          // White Vault Lock Icon
+          const Icon(
+            Icons.lock_rounded,
+            color: Colors.white,
+            size: 38,
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildCardDataRow(IconData icon, Color color, String title, String status) {
-    return Row(
-      children: [
-        Icon(icon, size: 12, color: color),
-        const SizedBox(width: 5),
-        Expanded(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimaryNavy,
-            ),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-          decoration: BoxDecoration(
-            color: color.withAlpha(20),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            status,
-            style: TextStyle(
-              fontSize: 8.0,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
