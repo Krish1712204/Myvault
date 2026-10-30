@@ -90,16 +90,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
           child: Column(
             children: [
-              const SizedBox(height: AppSpacing.md),
-              // Top shield logo
-              const VaultShieldLogo(size: 80),
               const SizedBox(height: AppSpacing.sm),
+              // Top shield logo
+              const VaultShieldLogo(size: 72),
+              const SizedBox(height: AppSpacing.xs),
               // Title
               Text(
                 'MyVault',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                       color: AppColors.textPrimaryNavy,
-                      fontSize: 30,
+                      fontSize: 28,
                       fontWeight: FontWeight.bold,
                     ),
               ),
@@ -116,12 +116,12 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 'Secure. Private. Always with you.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textMutedNavy,
-                      fontSize: 13,
+                      fontSize: 12.5,
                     ),
               ),
               const Spacer(),
 
-              // Circular Orbital Animated Vault Graphic
+              // Circular Orbital Animated Vault Graphic (Enlarged)
               _buildCircularOrbitalVault(size.width),
 
               const Spacer(),
@@ -211,8 +211,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   Widget _buildCircularOrbitalVault(double screenWidth) {
-    const double orbitRx = 120.0;
-    const double orbitRy = 50.0;
+    final double orbitRx = (screenWidth * 0.43).clamp(140.0, 172.0);
+    const double orbitRy = 65.0;
 
     return AnimatedBuilder(
       animation: _animController,
@@ -228,8 +228,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           final x = orbitRx * math.cos(angle);
           final y = orbitRy * math.sin(angle);
           final z = math.sin(angle); // -1 (back) to +1 (front)
-          final scale = 0.82 + 0.26 * ((z + 1) / 2);
-          final opacity = (0.55 + 0.45 * ((z + 1) / 2)).clamp(0.0, 1.0);
+          final scale = 0.84 + 0.26 * ((z + 1) / 2);
+          final opacity = (0.60 + 0.40 * ((z + 1) / 2)).clamp(0.0, 1.0);
 
           positionedItems.add(_CalculatedOrbit(
             item: item,
@@ -250,18 +250,18 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         final auraScale = 1.0 + math.sin(progress * 2 * math.pi) * 0.08;
 
         return SizedBox(
-          height: 250,
+          height: 310,
           width: screenWidth * 0.92,
           child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
-              // 1. Soft pulsing radial aura in the background
+              // 1. Soft pulsing radial aura in the background (enlarged)
               Transform.scale(
                 scale: auraScale,
                 child: Container(
-                  width: 210,
-                  height: 210,
+                  width: 270,
+                  height: 270,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: RadialGradient(
@@ -276,16 +276,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
               ),
 
               // 2. Orbital components BEHIND the card
-              ...backItems.map((p) => _buildOrbitalBadge(p)),
+              ...backItems.map((p) => _buildOrbitalBadge(p, screenWidth)),
 
-              // 3. Central Premium Digital Vault Card (Rich content)
+              // 3. Central Premium Digital Vault Card (Rich enlarged content)
               Transform.translate(
                 offset: Offset(0, centerFloatY),
                 child: _buildRichCenterCard(),
               ),
 
               // 4. Orbital components IN FRONT of the card
-              ...frontItems.map((p) => _buildOrbitalBadge(p)),
+              ...frontItems.map((p) => _buildOrbitalBadge(p, screenWidth)),
             ],
           ),
         );
@@ -293,17 +293,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
     );
   }
 
-  Widget _buildOrbitalBadge(_CalculatedOrbit p) {
+  Widget _buildOrbitalBadge(_CalculatedOrbit p, double screenWidth) {
     return Positioned(
-      left: (MediaQuery.of(context).size.width * 0.92 / 2) + p.x - 26,
-      top: 125 + p.y - 26,
+      left: (screenWidth * 0.92 / 2) + p.x - 30,
+      top: 155 + p.y - 30,
       child: Opacity(
         opacity: p.opacity,
         child: Transform.scale(
           scale: p.scale,
           child: Container(
-            width: 52,
-            height: 52,
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
@@ -313,23 +313,23 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: p.item.color.withAlpha((p.z > 0 ? 110 : 40)),
-                  blurRadius: p.z > 0 ? 14 : 6,
-                  offset: Offset(0, p.z > 0 ? 5 : 2),
+                  color: p.item.color.withAlpha((p.z > 0 ? 115 : 45)),
+                  blurRadius: p.z > 0 ? 16 : 7,
+                  offset: Offset(0, p.z > 0 ? 6 : 2),
                 ),
               ],
               border: Border.all(
-                color: Colors.white.withAlpha(200),
-                width: 1.5,
+                color: Colors.white.withAlpha(220),
+                width: 1.8,
               ),
             ),
             child: Icon(
               p.item.icon,
               color: Colors.white,
-              size: 26,
+              size: 28,
             ),
           ),
         ),
@@ -339,26 +339,26 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
 
   Widget _buildRichCenterCard() {
     return Container(
-      width: 160,
-      height: 185,
+      width: 182,
+      height: 215,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withAlpha(45), width: 1.5),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.primary.withAlpha(50), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withAlpha(30),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: AppColors.primary.withAlpha(35),
+            blurRadius: 26,
+            offset: const Offset(0, 10),
           ),
           BoxShadow(
-            color: Colors.black.withAlpha(10),
-            blurRadius: 6,
+            color: Colors.black.withAlpha(12),
+            blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -367,31 +367,31 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.all(5),
+                padding: const EdgeInsets.all(5.5),
                 decoration: BoxDecoration(
                   color: AppColors.primaryLight,
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.primary.withAlpha(50)),
                 ),
-                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 14),
+                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 15),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE8F5E9),
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: const Color(0xFF81C784)),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 9),
-                    SizedBox(width: 2),
+                    Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 10),
+                    SizedBox(width: 2.5),
                     Text(
                       'AES-256',
                       style: TextStyle(
                         color: Color(0xFF2E7D32),
-                        fontSize: 8.5,
+                        fontSize: 9.0,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -410,8 +410,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             style: TextStyle(
               color: AppColors.textPrimaryNavy,
               fontWeight: FontWeight.w800,
-              fontSize: 10.5,
-              letterSpacing: 0.5,
+              fontSize: 11.5,
+              letterSpacing: 0.6,
             ),
           ),
           const Text(
@@ -420,7 +420,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: AppColors.textMutedNavy,
-              fontSize: 8,
+              fontSize: 8.8,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -430,16 +430,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
 
           // Content Item Rows: Passwords, Documents, Cards
           _buildCardDataRow(Icons.key_rounded, const Color(0xFF2979FF), 'Passwords', 'Protected'),
-          const SizedBox(height: 3.5),
+          const SizedBox(height: 4.5),
           _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Encrypted'),
-          const SizedBox(height: 3.5),
+          const SizedBox(height: 4.5),
           _buildCardDataRow(Icons.credit_card_rounded, const Color(0xFF00C853), 'Cards & IDs', 'Offline'),
 
           const Spacer(),
 
           // Bottom Security Status Bar
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
             decoration: BoxDecoration(
               color: AppColors.background,
               borderRadius: BorderRadius.circular(6),
@@ -447,8 +447,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             ),
             child: const Row(
               children: [
-                Icon(Icons.check_circle_rounded, color: AppColors.success, size: 10),
-                SizedBox(width: 3),
+                Icon(Icons.check_circle_rounded, color: AppColors.success, size: 11),
+                SizedBox(width: 3.5),
                 Expanded(
                   child: Text(
                     'ACTIVE VAULT',
@@ -456,17 +456,17 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: AppColors.textPrimaryNavy,
-                      fontSize: 7.5,
+                      fontSize: 8.0,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.3,
                     ),
                   ),
                 ),
                 Text(
-                  '••••',
+                  '•••• ••••',
                   style: TextStyle(
                     fontFamily: 'monospace',
-                    fontSize: 7.5,
+                    fontSize: 8.0,
                     color: AppColors.textMutedNavy,
                     fontWeight: FontWeight.bold,
                   ),
@@ -482,15 +482,15 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   Widget _buildCardDataRow(IconData icon, Color color, String title, String status) {
     return Row(
       children: [
-        Icon(icon, size: 11, color: color),
-        const SizedBox(width: 4),
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 5),
         Expanded(
           child: Text(
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 9,
+              fontSize: 10,
               fontWeight: FontWeight.w600,
               color: AppColors.textPrimaryNavy,
             ),
@@ -498,7 +498,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
         ),
         const SizedBox(width: 4),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
           decoration: BoxDecoration(
             color: color.withAlpha(20),
             borderRadius: BorderRadius.circular(4),
@@ -506,7 +506,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           child: Text(
             status,
             style: TextStyle(
-              fontSize: 7.5,
+              fontSize: 8.0,
               fontWeight: FontWeight.w700,
               color: color,
             ),
