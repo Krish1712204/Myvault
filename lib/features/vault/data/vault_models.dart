@@ -175,6 +175,7 @@ class ContactEntry {
   final String? tags;
   final String? secondaryPhone;
   final String? secondaryEmail;
+  final String? attachmentPath;
 
   const ContactEntry({
     required this.id,
@@ -189,6 +190,7 @@ class ContactEntry {
     this.tags,
     this.secondaryPhone,
     this.secondaryEmail,
+    this.attachmentPath,
   });
 
   Map<String, dynamic> toMap() => {
@@ -204,6 +206,7 @@ class ContactEntry {
         'tags': tags,
         'secondary_phone': secondaryPhone,
         'secondary_email': secondaryEmail,
+        'attachment_path': attachmentPath,
       };
 
   factory ContactEntry.fromMap(Map<String, dynamic> map) => ContactEntry(
@@ -219,5 +222,6 @@ class ContactEntry {
         tags: map['tags'] as String?,
         secondaryPhone: map['secondary_phone'] as String?,
         secondaryEmail: map['secondary_email'] as String?,
+        attachmentPath: map['attachment_path'] as String?,
       );
 }

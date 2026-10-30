@@ -67,17 +67,6 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
     }
   }
 
-  String _formatTimestamp(int? millis, String fallback) {
-    if (millis == null) return fallback;
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final month = months[dt.month - 1];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
-  }
-
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(vaultItemsProvider);
@@ -117,8 +106,6 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
     final item = matches.first;
     final passwordText = item.password ?? '';
     final strength = PasswordGenerator.calculateStrength(passwordText);
-    final createdText = _formatTimestamp(item.createdAt, item.date);
-    final updatedText = _formatTimestamp(item.updatedAt, createdText);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -319,20 +306,11 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Metadata Card
+            // Category Card
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildMetaRow('Category', item.subcategory ?? 'Website'),
-                    const SizedBox(height: 12),
-                    _buildMetaRow('Created', createdText),
-                    const SizedBox(height: 12),
-                    _buildMetaRow('Updated', updatedText),
-                  ],
-                ),
+                child: _buildMetaRow('Category', item.subcategory ?? 'Website'),
               ),
             ),
             const SizedBox(height: AppSpacing.xl),

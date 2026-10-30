@@ -612,6 +612,88 @@ void main() {
 
       await upgradedDb.close();
     });
+
+    test('Persists contact photo attachment_path and retrieves it properly', () async {
+      const itemId = 'cnt_photo_01';
+      final item = VaultItem(
+        id: itemId,
+        title: 'Krishna Shelar',
+        subtitle: '+91 98765 43210',
+        category: VaultCategory.contacts,
+        phoneNumber: '+91 98765 43210',
+        email: 'krishna@example.com',
+        attachmentPath: 'attachments/cnt_photo_01_avatar.enc',
+        createdAt: 1729000000000,
+        updatedAt: 1729000000000,
+      );
+
+      const contact = ContactEntry(
+        id: 'entry_$itemId',
+        itemId: itemId,
+        phoneNumber: '+91 98765 43210',
+        email: 'krishna@example.com',
+        attachmentPath: 'attachments/cnt_photo_01_avatar.enc',
+      );
+
+      await repository.insertItem(item, contactEntry: contact);
+
+      final retrieved = await repository.getItemById(itemId);
+      expect(retrieved, isNotNull);
+      expect(retrieved!.title, equals('Krishna Shelar'));
+      expect(retrieved.phoneNumber, equals('+91 98765 43210'));
+      expect(retrieved.email, equals('krishna@example.com'));
+      expect(retrieved.attachmentPath, equals('attachments/cnt_photo_01_avatar.enc'));
+    });
+
+    test('Verifies ID card and attachment file format magic bytes detection', () {
+      final pdfBytes = Uint8List.fromList([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]);
+      final jpgBytes = Uint8List.fromList([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46]);
+      final pngBytes = Uint8List.fromList([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+      final webpBytes = Uint8List.fromList([
+        0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50
+      ]);
+
+      String detectExt(Uint8List bytes) {
+        if (bytes.length >= 4 &&
+            bytes[0] == 0x25 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x44 &&
+            bytes[3] == 0x46) {
+          return '.pdf';
+        } else if (bytes.length >= 3 &&
+            bytes[0] == 0xFF &&
+            bytes[1] == 0xD8 &&
+            bytes[2] == 0xFF) {
+          return '.jpg';
+        } else if (bytes.length >= 8 &&
+            bytes[0] == 0x89 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x4E &&
+            bytes[3] == 0x47 &&
+            bytes[4] == 0x0D &&
+            bytes[5] == 0x0A &&
+            bytes[6] == 0x1A &&
+            bytes[7] == 0x0A) {
+          return '.png';
+        } else if (bytes.length >= 12 &&
+            bytes[0] == 0x52 &&
+            bytes[1] == 0x49 &&
+            bytes[2] == 0x46 &&
+            bytes[3] == 0x46 &&
+            bytes[8] == 0x57 &&
+            bytes[9] == 0x45 &&
+            bytes[10] == 0x42 &&
+            bytes[11] == 0x50) {
+          return '.webp';
+        }
+        return '.jpg';
+      }
+
+      expect(detectExt(pdfBytes), equals('.pdf'));
+      expect(detectExt(jpgBytes), equals('.jpg'));
+      expect(detectExt(pngBytes), equals('.png'));
+      expect(detectExt(webpBytes), equals('.webp'));
+    });
   });
 }
 

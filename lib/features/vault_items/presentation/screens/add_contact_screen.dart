@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,28 +25,16 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _secPhoneController = TextEditingController();
   final _emailController = TextEditingController();
-  final _secEmailController = TextEditingController();
-  final _companyController = TextEditingController();
-  final _jobTitleController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _birthdayController = TextEditingController();
-  final _notesController = TextEditingController();
-  final _tagsController = TextEditingController();
 
   bool _initialized = false;
   bool _isSaving = false;
+  bool _isImportingVcf = false;
   bool _isFavourite = false;
-  String _selectedCategory = 'Personal';
 
-  final List<String> _categories = [
-    'Personal',
-    'Work',
-    'Family',
-    'Emergency',
-    'Other',
-  ];
+  Uint8List? _photoBytes;
+  String? _existingAttachmentPath;
+  bool _photoRemoved = false;
 
   @override
   void didChangeDependencies() {
@@ -65,18 +54,8 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
       if (item.id.isNotEmpty) {
         _nameController.text = item.title;
         _phoneController.text = item.phoneNumber ?? (item.details?.startsWith('+') == true ? item.details! : '');
-        _secPhoneController.text = item.secondaryPhone ?? '';
         _emailController.text = item.email ?? item.username ?? '';
-        _secEmailController.text = item.secondaryEmail ?? '';
-        _companyController.text = item.company ?? '';
-        _jobTitleController.text = item.jobTitle ?? '';
-        _addressController.text = item.address ?? '';
-        _birthdayController.text = item.birthday ?? '';
-        _notesController.text = item.details != null && !item.details!.startsWith('+') ? item.details! : '';
-        _tagsController.text = item.tags ?? '';
-        if (item.subcategory != null && _categories.contains(item.subcategory)) {
-          _selectedCategory = item.subcategory!;
-        }
+        _existingAttachmentPath = item.attachmentPath;
         _isFavourite = item.isFavourite;
       }
     }
@@ -86,52 +65,44 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
   void dispose() {
     _nameController.dispose();
     _phoneController.dispose();
-    _secPhoneController.dispose();
     _emailController.dispose();
-    _secEmailController.dispose();
-    _companyController.dispose();
-    _jobTitleController.dispose();
-    _addressController.dispose();
-    _birthdayController.dispose();
-    _notesController.dispose();
-    _tagsController.dispose();
     super.dispose();
   }
 
-  Future<void> _selectBirthday() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime(1995, 1, 1),
-      firstDate: DateTime(1900),
-      lastDate: now,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.primary,
-              onPrimary: Colors.white,
-              onSurface: AppColors.textPrimaryNavy,
-            ),
+  Future<void> _pickPhoto() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.image,
+      );
+      if (files.isNotEmpty) {
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        setState(() {
+          _photoBytes = bytes;
+          _photoRemoved = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not select image: $e'),
+            backgroundColor: AppColors.error,
           ),
-          child: child!,
         );
-      },
-    );
-
-    if (picked != null) {
-      const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-      ];
-      final monthStr = months[picked.month - 1];
-      setState(() {
-        _birthdayController.text = '${picked.day} $monthStr ${picked.year}';
-      });
+      }
     }
   }
 
-  Future<void> _importVcfFile() async {
+  void _removePhoto() {
+    setState(() {
+      _photoBytes = null;
+      _photoRemoved = true;
+    });
+  }
+
+  Future<void> _uploadVcfFile() async {
+    setState(() => _isImportingVcf = true);
     try {
       final files = await FilePicker.pickFiles(
         type: FileType.any,
@@ -140,12 +111,27 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
         final file = files.first;
         final bytes = await file.readAsBytes();
         final content = utf8.decode(bytes, allowMalformed: true);
-        _parseAndFillVCard(content);
-        if (mounted) {
+
+        // Bulk import contacts from the VCF string in ascending order
+        final count = await ref.read(vaultItemsProvider.notifier).importContactsFromVcf(content);
+
+        if (!mounted) return;
+        if (count > 0) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Contact details loaded from ${file.name}!'),
+              content: Text('Successfully imported $count contacts in ascending order!'),
               backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          context.pop();
+        } else {
+          // If no BEGIN:VCARD block was found, try filling current form fields
+          _parseSingleVCard(content);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Loaded contact details into form'),
+              backgroundColor: AppColors.primary,
             ),
           );
         }
@@ -154,15 +140,19 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not read contact file: $e'),
+            content: Text('Failed to import .vcf: $e'),
             backgroundColor: AppColors.error,
           ),
         );
       }
+    } finally {
+      if (mounted) {
+        setState(() => _isImportingVcf = false);
+      }
     }
   }
 
-  void _parseAndFillVCard(String vcf) {
+  void _parseSingleVCard(String vcf) {
     final lines = vcf.split(RegExp(r'\r?\n'));
     for (final rawLine in lines) {
       final line = rawLine.trim();
@@ -176,71 +166,15 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
         final val = line.split(':').last.trim();
         if (_phoneController.text.isEmpty) {
           _phoneController.text = val;
-        } else if (_secPhoneController.text.isEmpty) {
-          _secPhoneController.text = val;
         }
       } else if (line.startsWith('EMAIL') && line.contains(':')) {
         final val = line.split(':').last.trim();
         if (_emailController.text.isEmpty) {
           _emailController.text = val;
-        } else if (_secEmailController.text.isEmpty) {
-          _secEmailController.text = val;
         }
-      } else if (line.startsWith('ORG:')) {
-        _companyController.text = line.substring(4).replaceAll(';', ' ').trim();
-      } else if (line.startsWith('TITLE:')) {
-        _jobTitleController.text = line.substring(6).trim();
-      } else if (line.startsWith('NOTE:')) {
-        _notesController.text = line.substring(5).trim();
-      } else if (line.startsWith('BDAY:')) {
-        _birthdayController.text = line.substring(5).trim();
-      } else if (line.startsWith('ADR') && line.contains(':')) {
-        final val = line.split(':').last.replaceAll(';', ' ').trim();
-        if (val.isNotEmpty) _addressController.text = val;
       }
     }
     setState(() {});
-  }
-
-  void _showVcfGuideDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.contact_phone_rounded, color: AppColors.primary),
-            SizedBox(width: 10),
-            Text('Import from Mobile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'How to export contacts from your phone:',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy, fontSize: 13),
-            ),
-            SizedBox(height: 8),
-            Text(
-              '1. Open your phone\'s Contacts app (e.g. Google Contacts).\n'
-              '2. Tap "Fix & manage" (or Settings) at the bottom.\n'
-              '3. Tap "Export to file" and save as .vcf.\n'
-              '4. Tap "Import Contact (.vcf)" below and select that file.\n\n'
-              'All details will be imported instantly and stored 100% offline in your vault.',
-              style: TextStyle(color: AppColors.textPrimaryNavy, fontSize: 13, height: 1.4),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _saveContact() async {
@@ -250,26 +184,22 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final cleanTags = _tagsController.text
-          .split(',')
-          .map((t) => t.trim().replaceAll('#', ''))
-          .where((t) => t.isNotEmpty)
-          .join(',');
+      String? attachmentPath = _photoRemoved ? null : _existingAttachmentPath;
+
+      if (_photoBytes != null) {
+        final cleanName = _nameController.text.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+        attachmentPath = await ref.read(vaultItemsProvider.notifier).encryptAttachment(
+              fileBytes: _photoBytes!,
+              originalFileName: '${cleanName.isEmpty ? "contact" : cleanName}_avatar.jpg',
+            );
+      }
 
       await ref.read(vaultItemsProvider.notifier).saveContactItem(
             id: widget.itemId,
             fullName: _nameController.text.trim(),
             phoneNumber: _phoneController.text.trim(),
-            secondaryPhone: _secPhoneController.text.trim().isNotEmpty ? _secPhoneController.text.trim() : null,
             email: _emailController.text.trim().isNotEmpty ? _emailController.text.trim() : null,
-            secondaryEmail: _secEmailController.text.trim().isNotEmpty ? _secEmailController.text.trim() : null,
-            company: _companyController.text.trim().isNotEmpty ? _companyController.text.trim() : null,
-            jobTitle: _jobTitleController.text.trim().isNotEmpty ? _jobTitleController.text.trim() : null,
-            address: _addressController.text.trim().isNotEmpty ? _addressController.text.trim() : null,
-            birthday: _birthdayController.text.trim().isNotEmpty ? _birthdayController.text.trim() : null,
-            notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
-            category: _selectedCategory,
-            tags: cleanTags.isNotEmpty ? cleanTags : null,
+            attachmentPath: attachmentPath,
             isFavourite: _isFavourite,
           );
 
@@ -279,7 +209,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
           content: Text(
             widget.itemId != null ? 'Contact updated successfully' : 'Contact saved to vault',
           ),
-          backgroundColor: AppColors.primary,
+          backgroundColor: AppColors.success,
         ),
       );
       context.pop();
@@ -359,442 +289,301 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
           child: Form(
             key: _formKey,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Quick Import Banner from Phone
-                if (!isEditing) ...[
-                  Card(
-                    elevation: 0,
-                    color: AppColors.primaryLight.withAlpha(90),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(color: AppColors.primary.withAlpha(60)),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.phone_android_rounded, color: AppColors.primary, size: 22),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Import from Mobile Device',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    color: AppColors.textPrimaryNavy,
-                                  ),
+                // VCF Bulk Upload Option Card
+                Card(
+                  elevation: 0,
+                  color: AppColors.primaryLight.withAlpha(90),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(color: AppColors.primary.withAlpha(60)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.file_upload_outlined, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Upload .vcf File',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: AppColors.textPrimaryNavy,
                                 ),
-                                SizedBox(height: 1),
-                                Text(
-                                  'Auto-fill from .vcf export file',
-                                  style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.help_outline_rounded, size: 18, color: AppColors.primary),
-                            tooltip: 'How to export contacts',
-                            onPressed: _showVcfGuideDialog,
-                          ),
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            onPressed: _importVcfFile,
-                            child: const Text('Import .vcf', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
-                // Full Name
-                const Text(
-                  'Full Name *',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    hintText: 'e.g. Rahul Sharma',
-                    prefixIcon: Icon(Icons.person_rounded, color: AppColors.textMutedNavy),
-                    fillColor: Colors.white,
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return 'Please enter a name';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Phone Numbers Row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Primary Phone *',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _phoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              hintText: '+91 98765 43210',
-                              prefixIcon: Icon(Icons.phone_android_rounded, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                            validator: (val) {
-                              if (val == null || val.trim().isEmpty) {
-                                return 'Enter phone number';
-                              }
-                              return null;
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Secondary Phone',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _secPhoneController,
-                            keyboardType: TextInputType.phone,
-                            decoration: const InputDecoration(
-                              hintText: '+91 91234 56789',
-                              prefixIcon: Icon(Icons.phone_rounded, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Emails Row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Primary Email',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _emailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              hintText: 'user@example.com',
-                              prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Secondary Email',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _secEmailController,
-                            keyboardType: TextInputType.emailAddress,
-                            decoration: const InputDecoration(
-                              hintText: 'work@domain.com',
-                              prefixIcon: Icon(Icons.alternate_email_rounded, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Work Row (Company & Job Title)
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Company / Org',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _companyController,
-                            decoration: const InputDecoration(
-                              hintText: 'Acme Corp',
-                              prefixIcon: Icon(Icons.business_rounded, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Job Title',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _jobTitleController,
-                            decoration: const InputDecoration(
-                              hintText: 'Product Manager',
-                              prefixIcon: Icon(Icons.work_outline_rounded, color: AppColors.textMutedNavy, size: 20),
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Address Field
-                const Text(
-                  'Address',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _addressController,
-                  decoration: const InputDecoration(
-                    hintText: '123 Marine Drive, Mumbai, MH, 400020',
-                    prefixIcon: Icon(Icons.location_on_outlined, color: AppColors.textMutedNavy),
-                    fillColor: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Birthday & Category Row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Birthday',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _birthdayController,
-                            readOnly: true,
-                            onTap: _selectBirthday,
-                            decoration: InputDecoration(
-                              hintText: 'Select Date',
-                              prefixIcon: const Icon(Icons.cake_outlined, color: AppColors.textMutedNavy, size: 20),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.calendar_month_rounded, size: 18, color: AppColors.primary),
-                                onPressed: _selectBirthday,
                               ),
-                              fillColor: Colors.white,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Import all contacts in ascending order',
+                                style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
+                          ),
+                          onPressed: _isImportingVcf ? null : _uploadVcfFile,
+                          child: _isImportingVcf
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text('Upload', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Category',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedCategory,
-                            decoration: const InputDecoration(
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            ),
-                            items: _categories.map((c) {
-                              return DropdownMenuItem(
-                                value: c,
-                                child: Text(c, style: const TextStyle(fontSize: 14)),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() => _selectedCategory = val);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Tags Field
-                const Text(
-                  'Tags (comma separated)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _tagsController,
-                  decoration: const InputDecoration(
-                    hintText: 'colleague, client, emergency',
-                    prefixIcon: Icon(Icons.tag_rounded, color: AppColors.textMutedNavy),
-                    fillColor: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Notes Field
-                const Text(
-                  'Private Notes (Optional)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _notesController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    hintText: 'Additional details or private context...',
-                    fillColor: Colors.white,
                   ),
                 ),
                 const SizedBox(height: AppSpacing.lg),
 
-                // Security Note
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
+                // Contact Photo Picker & Live Preview
+                Center(
+                  child: Column(
                     children: [
-                      Icon(Icons.lock_outline_rounded, color: AppColors.primary, size: 20),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Contacts are stored securely and privately on this device only. Zero external syncing.',
-                          style: TextStyle(
-                            color: AppColors.textPrimaryNavy,
-                            fontSize: 12,
-                          ),
+                      GestureDetector(
+                        onTap: _pickPhoto,
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 100,
+                              height: 100,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.categoryContactsBg,
+                                border: Border.all(color: AppColors.primary.withAlpha(70), width: 2),
+                              ),
+                              child: ClipOval(
+                                child: _buildAvatarImage(),
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                ),
+                                child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          TextButton.icon(
+                            onPressed: _pickPhoto,
+                            icon: const Icon(Icons.photo_camera_outlined, size: 16, color: AppColors.primary),
+                            label: Text(
+                              _hasPhoto ? 'Change Photo' : 'Upload Photo',
+                              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ),
+                          if (_hasPhoto) ...[
+                            const SizedBox(width: 8),
+                            TextButton.icon(
+                              onPressed: _removePhoto,
+                              icon: const Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.error),
+                              label: const Text(
+                                'Remove',
+                                style: TextStyle(color: AppColors.error, fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.lg),
+
+                // Contact Details Form Card
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Contact Name
+                        const Text(
+                          'Contact Name *',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimaryNavy,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _nameController,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: const InputDecoration(
+                            hintText: 'Contact Name',
+                            prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.textMutedNavy),
+                            fillColor: Colors.white,
+                          ),
+                          validator: (val) {
+                            if (val == null || val.trim().isEmpty) {
+                              return 'Please enter contact name';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Mobile Number
+                        const Text(
+                          'Mobile Number *',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimaryNavy,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            hintText: 'Mobile Number',
+                            prefixIcon: Icon(Icons.phone_rounded, color: AppColors.textMutedNavy),
+                            fillColor: Colors.white,
+                          ),
+                          validator: (val) {
+                            if (val == null || val.trim().isEmpty) {
+                              return 'Please enter mobile number';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Email (Optional)
+                        const Text(
+                          'Email (Optional)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimaryNavy,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            hintText: 'Email address',
+                            prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMutedNavy),
+                            fillColor: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: AppSpacing.xl),
+
+                // Save Contact Button
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: _isSaving ? null : _saveContact,
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : Text(
+                          isEditing ? 'Update Contact' : 'Save Contact',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  bool get _hasPhoto =>
+      _photoBytes != null || (_existingAttachmentPath != null && !_photoRemoved);
+
+  Widget _buildAvatarImage() {
+    if (_photoBytes != null) {
+      return Image.memory(
+        _photoBytes!,
+        fit: BoxFit.cover,
+        width: 100,
+        height: 100,
+      );
+    }
+
+    if (_existingAttachmentPath != null && !_photoRemoved) {
+      return FutureBuilder<Uint8List>(
+        future: ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(_existingAttachmentPath!),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return Image.memory(
+              snapshot.data!,
+              fit: BoxFit.cover,
+              width: 100,
+              height: 100,
+            );
+          }
+          return const Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
+      );
+    }
+
+    return const Center(
+      child: Icon(Icons.person_rounded, size: 50, color: AppColors.primary),
     );
   }
 }

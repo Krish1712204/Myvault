@@ -370,6 +370,7 @@ class VaultRepository {
         tags = cRow['tags'] as String?;
         secondaryPhone = cRow['secondary_phone'] as String?;
         secondaryEmail = cRow['secondary_email'] as String?;
+        attachmentPath = cRow['attachment_path'] as String?;
         username = email;
       }
     }

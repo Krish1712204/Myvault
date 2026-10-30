@@ -64,20 +64,6 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
     }
   }
 
-  String _formatTimestamp(int? millis, String fallback) {
-    if (millis == null) return fallback;
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    final month = months[dt.month - 1];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
-  }
-
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(vaultItemsProvider);
@@ -316,83 +302,11 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                 ),
               ),
 
-              const SizedBox(height: AppSpacing.md),
-
-              // Metadata Card
-              Container(
-                padding: const EdgeInsets.all(AppSpacing.md),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha(8),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Information',
-                      style: TextStyle(
-                        color: AppColors.textPrimaryNavy,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildMetaRow(
-                      label: 'Created',
-                      value: _formatTimestamp(item.createdAt, item.date),
-                    ),
-                    const Divider(height: 16, color: AppColors.border),
-                    _buildMetaRow(
-                      label: 'Last Updated',
-                      value: _formatTimestamp(item.updatedAt, item.date),
-                    ),
-                    const Divider(height: 16, color: AppColors.border),
-                    _buildMetaRow(
-                      label: 'Protection',
-                      value: 'Secured on device (Offline)',
-                    ),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: AppSpacing.lg),
             ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildMetaRow({required String label, required String value}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMutedNavy,
-            fontSize: 13,
-          ),
-        ),
-        Flexible(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: AppColors.textPrimaryNavy,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

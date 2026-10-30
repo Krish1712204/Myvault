@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -41,6 +42,25 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
             content: Text('Dialer unavailable. Copied $phone to clipboard.'),
             backgroundColor: AppColors.primary,
           ),
+        );
+      }
+    }
+  }
+
+  Future<void> _sendSms(BuildContext context, String phone) async {
+    final cleanNumber = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    final uri = Uri(scheme: 'sms', path: cleanNumber);
+    try {
+      final launched = await launchUrl(uri);
+      if (!launched) {
+        throw Exception('Could not launch SMS');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ClipboardService.copyPublic(
+          context: context,
+          text: phone,
+          label: 'Phone number',
         );
       }
     }
@@ -114,29 +134,6 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
     }
   }
 
-  String _formatTimestamp(int? millis, String fallback) {
-    if (millis == null) return fallback;
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    final month = months[dt.month - 1];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
-  }
-
-  List<String> _parseTags(String? tags) {
-    if (tags == null || tags.trim().isEmpty) return [];
-    return tags
-        .split(',')
-        .map((t) => t.trim().replaceAll('#', ''))
-        .where((t) => t.isNotEmpty)
-        .toList();
-  }
-
   String _getInitials(String name) {
     final clean = name.trim();
     if (clean.isEmpty) return 'C';
@@ -145,6 +142,38 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
       return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     }
     return clean.substring(0, 1).toUpperCase();
+  }
+
+  void _showPhotoPreview(Uint8List bytes, String name) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text(name, style: const TextStyle(fontSize: 16)),
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+              child: InteractiveViewer(
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -182,21 +211,8 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
 
     final item = matches.first;
     final primaryPhone = item.phoneNumber ?? (item.details?.startsWith('+') == true ? item.details! : '');
-    final secondaryPhone = item.secondaryPhone;
-    final primaryEmail = item.email ?? item.username;
-    final secondaryEmail = item.secondaryEmail;
-    final company = item.company;
-    final jobTitle = item.jobTitle;
-    final address = item.address;
-    final birthday = item.birthday;
-    final notes = item.details != null && !item.details!.startsWith('+') ? item.details! : null;
-    final tags = _parseTags(item.tags);
+    final email = item.email ?? item.username;
     final initials = _getInitials(item.title);
-
-    final workSubtitle = [
-      if (jobTitle != null && jobTitle.isNotEmpty) jobTitle,
-      if (company != null && company.isNotEmpty) company,
-    ].join(' at ');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -220,6 +236,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
               size: 24,
             ),
+            tooltip: item.isFavourite ? 'Starred' : 'Mark as Favourite',
             onPressed: () {
               ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
             },
@@ -241,7 +258,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header Profile Card
+              // Header Profile Card with Photo Avatar
               Container(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
@@ -257,19 +274,8 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                 ),
                 child: Column(
                   children: [
-                    CircleAvatar(
-                      radius: 36,
-                      backgroundColor: AppColors.primary,
-                      child: Text(
-                        initials,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    _buildAvatar(item, initials),
+                    const SizedBox(height: 14),
                     Text(
                       item.title,
                       textAlign: TextAlign.center,
@@ -279,36 +285,9 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    if (workSubtitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        workSubtitle,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textSecondaryNavy,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AppColors.categoryContactsBg,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        item.subcategory ?? 'Personal',
-                        style: const TextStyle(
-                          color: AppColors.categoryContacts,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 16),
 
-                    // Quick Action Buttons (Call, Email, Copy)
+                    // Quick Action Buttons (Call, SMS, Email, Copy)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -318,27 +297,30 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                             label: 'Call',
                             onTap: () => _makePhoneCall(context, primaryPhone),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
+                          _buildActionButton(
+                            icon: Icons.message_rounded,
+                            label: 'Message',
+                            onTap: () => _sendSms(context, primaryPhone),
+                          ),
+                          const SizedBox(width: 12),
                         ],
-                        if (primaryEmail != null && primaryEmail.isNotEmpty) ...[
+                        if (email != null && email.isNotEmpty) ...[
                           _buildActionButton(
                             icon: Icons.email_rounded,
                             label: 'Email',
-                            onTap: () => _sendEmail(context, primaryEmail),
+                            onTap: () => _sendEmail(context, email),
                           ),
-                          const SizedBox(width: 16),
+                          const SizedBox(width: 12),
                         ],
                         _buildActionButton(
                           icon: Icons.copy_rounded,
-                          label: 'Copy Info',
+                          label: 'Copy',
                           onTap: () {
                             final info = StringBuffer();
                             info.writeln(item.title);
                             if (primaryPhone.isNotEmpty) info.writeln('Phone: $primaryPhone');
-                            if (primaryEmail != null && primaryEmail.isNotEmpty) info.writeln('Email: $primaryEmail');
-                            if (company != null && company.isNotEmpty) info.writeln('Company: $company');
-                            if (jobTitle != null && jobTitle.isNotEmpty) info.writeln('Job Title: $jobTitle');
-                            if (address != null && address.isNotEmpty) info.writeln('Address: $address');
+                            if (email != null && email.isNotEmpty) info.writeln('Email: $email');
                             ClipboardService.copyPublic(
                               context: context,
                               text: info.toString().trim(),
@@ -354,335 +336,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
 
               const SizedBox(height: AppSpacing.md),
 
-              // Phone Section
-              if (primaryPhone.isNotEmpty || (secondaryPhone != null && secondaryPhone.isNotEmpty))
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Phone Numbers',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (primaryPhone.isNotEmpty)
-                        _buildContactRow(
-                          icon: Icons.phone_android_rounded,
-                          label: 'Primary',
-                          value: primaryPhone,
-                          onAction: () => _makePhoneCall(context, primaryPhone),
-                          actionIcon: Icons.phone_forwarded_rounded,
-                          onCopy: () => ClipboardService.copyPublic(
-                            context: context,
-                            text: primaryPhone,
-                            label: 'Phone number',
-                          ),
-                        ),
-                      if (secondaryPhone != null && secondaryPhone.isNotEmpty) ...[
-                        const Divider(height: 16, color: AppColors.border),
-                        _buildContactRow(
-                          icon: Icons.phone_rounded,
-                          label: 'Secondary',
-                          value: secondaryPhone,
-                          onAction: () => _makePhoneCall(context, secondaryPhone),
-                          actionIcon: Icons.phone_forwarded_rounded,
-                          onCopy: () => ClipboardService.copyPublic(
-                            context: context,
-                            text: secondaryPhone,
-                            label: 'Secondary phone',
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-              // Email Section
-              if ((primaryEmail != null && primaryEmail.isNotEmpty) ||
-                  (secondaryEmail != null && secondaryEmail.isNotEmpty))
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Email Addresses',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (primaryEmail != null && primaryEmail.isNotEmpty)
-                        _buildContactRow(
-                          icon: Icons.email_outlined,
-                          label: 'Primary',
-                          value: primaryEmail,
-                          onAction: () => _sendEmail(context, primaryEmail),
-                          actionIcon: Icons.send_rounded,
-                          onCopy: () => ClipboardService.copyPublic(
-                            context: context,
-                            text: primaryEmail,
-                            label: 'Email address',
-                          ),
-                        ),
-                      if (secondaryEmail != null && secondaryEmail.isNotEmpty) ...[
-                        const Divider(height: 16, color: AppColors.border),
-                        _buildContactRow(
-                          icon: Icons.alternate_email_rounded,
-                          label: 'Secondary',
-                          value: secondaryEmail,
-                          onAction: () => _sendEmail(context, secondaryEmail),
-                          actionIcon: Icons.send_rounded,
-                          onCopy: () => ClipboardService.copyPublic(
-                            context: context,
-                            text: secondaryEmail,
-                            label: 'Secondary email',
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-              // Work & Organization Section
-              if ((company != null && company.isNotEmpty) || (jobTitle != null && jobTitle.isNotEmpty))
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Work & Organization',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (company != null && company.isNotEmpty)
-                        _buildInfoRow(
-                          icon: Icons.business_rounded,
-                          label: 'Company',
-                          value: company,
-                        ),
-                      if (jobTitle != null && jobTitle.isNotEmpty) ...[
-                        if (company != null && company.isNotEmpty)
-                          const Divider(height: 16, color: AppColors.border),
-                        _buildInfoRow(
-                          icon: Icons.work_outline_rounded,
-                          label: 'Job Title',
-                          value: jobTitle,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-              // Personal Information (Address & Birthday)
-              if ((address != null && address.isNotEmpty) || (birthday != null && birthday.isNotEmpty))
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Personal Info',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (address != null && address.isNotEmpty)
-                        _buildContactRow(
-                          icon: Icons.location_on_outlined,
-                          label: 'Address',
-                          value: address,
-                          onCopy: () => ClipboardService.copyPublic(
-                            context: context,
-                            text: address,
-                            label: 'Address',
-                          ),
-                        ),
-                      if (birthday != null && birthday.isNotEmpty) ...[
-                        if (address != null && address.isNotEmpty)
-                          const Divider(height: 16, color: AppColors.border),
-                        _buildInfoRow(
-                          icon: Icons.cake_outlined,
-                          label: 'Birthday',
-                          value: birthday,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
-              // Notes Section
-              if (notes != null && notes.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Notes',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SelectableText(
-                        notes,
-                        style: const TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Tags Section
-              if (tags.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(bottom: AppSpacing.md),
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Tags',
-                        style: TextStyle(
-                          color: AppColors.textPrimaryNavy,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: tags.map((t) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.background,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  '#',
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  t,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimaryNavy,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Metadata Card
+              // Contact Information Card
               Container(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
@@ -700,7 +354,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Information',
+                      'Contact Information',
                       style: TextStyle(
                         color: AppColors.textPrimaryNavy,
                         fontSize: 14,
@@ -708,27 +362,133 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _buildMetaRow(
-                      label: 'Created',
-                      value: _formatTimestamp(item.createdAt, item.date),
-                    ),
-                    const Divider(height: 16, color: AppColors.border),
-                    _buildMetaRow(
-                      label: 'Last Updated',
-                      value: _formatTimestamp(item.updatedAt, item.date),
-                    ),
-                    const Divider(height: 16, color: AppColors.border),
-                    _buildMetaRow(
-                      label: 'Protection',
-                      value: 'Secured on device (Offline)',
-                    ),
+                    // Mobile Number Row
+                    if (primaryPhone.isNotEmpty)
+                      _buildContactRow(
+                        icon: Icons.phone_android_rounded,
+                        label: 'Mobile Number',
+                        value: primaryPhone,
+                        onAction: () => _makePhoneCall(context, primaryPhone),
+                        actionIcon: Icons.phone_forwarded_rounded,
+                        onCopy: () => ClipboardService.copyPublic(
+                          context: context,
+                          text: primaryPhone,
+                          label: 'Mobile number',
+                        ),
+                      ),
+                    if (primaryPhone.isNotEmpty && email != null && email.isNotEmpty)
+                      const Divider(height: 20, color: AppColors.border),
+                    // Email Row (if exists)
+                    if (email != null && email.isNotEmpty)
+                      _buildContactRow(
+                        icon: Icons.email_outlined,
+                        label: 'Email',
+                        value: email,
+                        onAction: () => _sendEmail(context, email),
+                        actionIcon: Icons.send_rounded,
+                        onCopy: () => ClipboardService.copyPublic(
+                          context: context,
+                          text: email,
+                          label: 'Email address',
+                        ),
+                      ),
                   ],
                 ),
               ),
 
+              const SizedBox(height: AppSpacing.xl),
+
+              // Edit and Delete Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primary,
+                        side: const BorderSide(color: AppColors.primary),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Edit Contact', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () => context.push('/edit-contact/${item.id}'),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: const BorderSide(color: AppColors.error),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                      label: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: () => _confirmDelete(context, item),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: AppSpacing.lg),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(VaultItem item, String initials) {
+    if (item.attachmentPath != null && item.attachmentPath!.isNotEmpty) {
+      return FutureBuilder<Uint8List>(
+        future: ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(item.attachmentPath!),
+        builder: (context, snapshot) {
+          if (snapshot.hasData) {
+            return GestureDetector(
+              onTap: () => _showPhotoPreview(snapshot.data!, item.title),
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary, width: 2),
+                ),
+                child: ClipOval(
+                  child: Image.memory(
+                    snapshot.data!,
+                    fit: BoxFit.cover,
+                    width: 80,
+                    height: 80,
+                  ),
+                ),
+              ),
+            );
+          }
+          return CircleAvatar(
+            radius: 40,
+            backgroundColor: AppColors.primary,
+            child: Text(
+              initials,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
+    return CircleAvatar(
+      radius: 40,
+      backgroundColor: AppColors.primary,
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
@@ -741,23 +501,23 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        width: 80,
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: AppColors.primaryLight,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: AppColors.primary, size: 22),
-            const SizedBox(height: 4),
+            Icon(icon, size: 20, color: AppColors.primary),
+            const SizedBox(height: 3),
             Text(
               label,
               style: const TextStyle(
                 color: AppColors.primary,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -771,13 +531,20 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
     required IconData icon,
     required String label,
     required String value,
-    VoidCallback? onAction,
-    IconData? actionIcon,
-    VoidCallback? onCopy,
+    required VoidCallback onAction,
+    required IconData actionIcon,
+    required VoidCallback onCopy,
   }) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: AppColors.textMutedNavy),
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.primaryLight,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppColors.primary, size: 20),
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -788,8 +555,10 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                 style: const TextStyle(
                   color: AppColors.textMutedNavy,
                   fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
+              const SizedBox(height: 2),
               SelectableText(
                 value,
                 style: const TextStyle(
@@ -801,80 +570,13 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
             ],
           ),
         ),
-        if (onAction != null && actionIcon != null)
-          IconButton(
-            icon: Icon(actionIcon, size: 18, color: AppColors.primary),
-            onPressed: onAction,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        if (onCopy != null)
-          IconButton(
-            icon: const Icon(Icons.copy_rounded, size: 16, color: AppColors.textMutedNavy),
-            onPressed: onCopy,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 20, color: AppColors.textMutedNavy),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppColors.textMutedNavy,
-                  fontSize: 11,
-                ),
-              ),
-              SelectableText(
-                value,
-                style: const TextStyle(
-                  color: AppColors.textPrimaryNavy,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+        IconButton(
+          icon: Icon(actionIcon, size: 20, color: AppColors.primary),
+          onPressed: onAction,
         ),
-      ],
-    );
-  }
-
-  Widget _buildMetaRow({required String label, required String value}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: AppColors.textMutedNavy,
-            fontSize: 13,
-          ),
-        ),
-        Flexible(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: AppColors.textPrimaryNavy,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        IconButton(
+          icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.textMutedNavy),
+          onPressed: onCopy,
         ),
       ],
     );

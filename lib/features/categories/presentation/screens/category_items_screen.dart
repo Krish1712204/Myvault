@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +31,38 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _uploadVcfFile(BuildContext context) async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.any,
+      );
+      if (files.isNotEmpty) {
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        final content = utf8.decode(bytes, allowMalformed: true);
+        final count = await ref.read(vaultItemsProvider.notifier).importContactsFromVcf(content);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Successfully imported $count contacts in ascending order!'),
+              backgroundColor: AppColors.success,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to import contacts: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _confirmDelete(BuildContext context, VaultItem item) async {
@@ -140,6 +175,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           (item.address != null && item.address!.toLowerCase().contains(query));
     }).toList();
 
+    if (category == VaultCategory.contacts) {
+      filteredItems.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -168,6 +207,12 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           ],
         ),
         actions: [
+          if (!isFavouritesCategory && category == VaultCategory.contacts)
+            IconButton(
+              icon: const Icon(Icons.file_upload_outlined, color: AppColors.primary, size: 24),
+              tooltip: 'Upload .vcf File',
+              onPressed: () => _uploadVcfFile(context),
+            ),
           if (!isFavouritesCategory)
             IconButton(
               icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
@@ -490,24 +535,27 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       final initials = parts.length >= 2
           ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
           : (name.isNotEmpty ? name[0].toUpperCase() : 'C');
-      return Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: AppColors.categoryContactsBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            initials,
-            style: const TextStyle(
-              color: AppColors.categoryContacts,
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
-            ),
-          ),
-        ),
-      );
+
+      if (item.attachmentPath != null && item.attachmentPath!.isNotEmpty) {
+        return FutureBuilder<Uint8List>(
+          future: ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(item.attachmentPath!),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(
+                  snapshot.data!,
+                  width: 42,
+                  height: 42,
+                  fit: BoxFit.cover,
+                ),
+              );
+            }
+            return _buildInitialsContactAvatar(initials);
+          },
+        );
+      }
+      return _buildInitialsContactAvatar(initials);
     }
 
     IconData icon = Icons.lock_outline_rounded;
@@ -540,6 +588,27 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: Icon(icon, color: color, size: 22),
+    );
+  }
+
+  Widget _buildInitialsContactAvatar(String initials) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.categoryContactsBg,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Text(
+          initials,
+          style: const TextStyle(
+            color: AppColors.categoryContacts,
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
     );
   }
 

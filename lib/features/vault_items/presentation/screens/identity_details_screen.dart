@@ -80,17 +80,6 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     return '$maskedPart$visiblePart'.trim();
   }
 
-  String _formatTimestamp(int? millis, String fallback) {
-    if (millis == null) return fallback;
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final month = months[dt.month - 1];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
-  }
-
   Future<void> _previewAttachment(String attachmentPath) async {
     setState(() => _isLoadingAttachment = true);
     try {
@@ -162,8 +151,48 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     setState(() => _isDownloadingAttachment = true);
     try {
       final bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(attachmentPath);
-      final ext = attachmentPath.contains('.') ? '.${attachmentPath.split('.').last}' : '.jpg';
-      final defaultFileName = '${item.title.replaceAll(' ', '_')}_id$ext';
+
+      // Determine genuine file format from magic bytes (never save as .enc)
+      String ext = '.jpg';
+      if (bytes.length >= 4 &&
+          bytes[0] == 0x25 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x44 &&
+          bytes[3] == 0x46) {
+        // %PDF
+        ext = '.pdf';
+      } else if (bytes.length >= 3 &&
+          bytes[0] == 0xFF &&
+          bytes[1] == 0xD8 &&
+          bytes[2] == 0xFF) {
+        // JPEG SOI
+        ext = '.jpg';
+      } else if (bytes.length >= 8 &&
+          bytes[0] == 0x89 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x4E &&
+          bytes[3] == 0x47 &&
+          bytes[4] == 0x0D &&
+          bytes[5] == 0x0A &&
+          bytes[6] == 0x1A &&
+          bytes[7] == 0x0A) {
+        // PNG
+        ext = '.png';
+      } else if (bytes.length >= 12 &&
+          bytes[0] == 0x52 &&
+          bytes[1] == 0x49 &&
+          bytes[2] == 0x46 &&
+          bytes[3] == 0x46 &&
+          bytes[8] == 0x57 &&
+          bytes[9] == 0x45 &&
+          bytes[10] == 0x42 &&
+          bytes[11] == 0x50) {
+        // RIFF ... WEBP
+        ext = '.webp';
+      }
+
+      final cleanTitle = item.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+      final defaultFileName = '${cleanTitle.isEmpty ? "id_document" : cleanTitle}$ext';
 
       final savedPath = await FilePicker.saveFile(
         dialogTitle: 'Download ID Card',
@@ -277,8 +306,6 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
 
     final item = matches.first;
     final idNumber = item.documentNumber ?? '';
-    final createdText = _formatTimestamp(item.createdAt, item.date);
-    final updatedText = _formatTimestamp(item.updatedAt, item.date);
 
     final isPaymentCard = item.documentType == 'Debit Card' || item.documentType == 'Credit Card';
     final isUpi = item.documentType == 'UPI ID';
@@ -665,58 +692,6 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                           ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-
-              // Timestamps Card
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Created',
-                            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                          ),
-                          Text(
-                            createdText,
-                            style: const TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Last Updated',
-                            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                          ),
-                          Text(
-                            updatedText,
-                            style: const TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),

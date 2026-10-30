@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../features/auth/domain/vault_auth_notifier.dart';
@@ -379,10 +381,11 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     String? tags,
     String? secondaryPhone,
     String? secondaryEmail,
+    String? attachmentPath,
     bool isFavourite = false,
   }) async {
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'cnt_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final itemId = isNew ? 'cnt_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}' : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final subtitle = [
@@ -410,6 +413,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       tags: tags,
       secondaryPhone: secondaryPhone,
       secondaryEmail: secondaryEmail,
+      attachmentPath: attachmentPath,
       username: email,
     );
 
@@ -426,6 +430,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       tags: tags,
       secondaryPhone: secondaryPhone,
       secondaryEmail: secondaryEmail,
+      attachmentPath: attachmentPath,
     );
 
     if (isNew) {
@@ -435,6 +440,125 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     await loadItems();
+  }
+
+  /// Bulk imports contacts from a VCF string, parsing names, phones, emails, and base64 photos,
+  /// sorting them in ascending alphabetical order by Contact Name, and saving to vault.
+  Future<int> importContactsFromVcf(String vcfContent) async {
+    final session = _ref.read(vaultSessionProvider);
+    final vek = session.vek;
+    if (vek == null) {
+      throw StateError('Vault is locked. Cannot import contacts.');
+    }
+
+    // Unfold multiline fields (RFC 2425/2426/6350)
+    final unfolded = vcfContent.replaceAll(RegExp(r'\r?\n[ \t]'), '');
+    final cardRegex = RegExp(r'BEGIN:VCARD[\s\S]*?END:VCARD', caseSensitive: false);
+    final matches = cardRegex.allMatches(unfolded);
+
+    if (matches.isEmpty) {
+      return 0;
+    }
+
+    final parsedList = <_ParsedVcfContact>[];
+
+    for (final match in matches) {
+      final cardText = match.group(0)!;
+      final lines = cardText.split(RegExp(r'\r?\n'));
+
+      String fullName = '';
+      String phoneNumber = '';
+      String? email;
+      Uint8List? photoBytes;
+
+      for (final rawLine in lines) {
+        final line = rawLine.trim();
+        if (line.isEmpty) continue;
+
+        final colonIndex = line.indexOf(':');
+        if (colonIndex == -1) continue;
+
+        final key = line.substring(0, colonIndex).toUpperCase();
+        final value = line.substring(colonIndex + 1).trim();
+
+        if (key == 'FN' || key.startsWith('FN;')) {
+          if (fullName.isEmpty) fullName = value;
+        } else if ((key == 'N' || key.startsWith('N;')) && fullName.isEmpty) {
+          final parts = value.split(';').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+          if (parts.length >= 2) {
+            fullName = '${parts[1]} ${parts[0]}';
+          } else if (parts.isNotEmpty) {
+            fullName = parts[0];
+          }
+        } else if (key == 'TEL' || key.startsWith('TEL;')) {
+          if (phoneNumber.isEmpty) {
+            phoneNumber = value;
+          }
+        } else if (key == 'EMAIL' || key.startsWith('EMAIL;')) {
+          if (email == null || email.isEmpty) {
+            email = value;
+          }
+        } else if (key.startsWith('PHOTO')) {
+          try {
+            var base64Str = value;
+            if (base64Str.contains(',')) {
+              base64Str = base64Str.split(',').last;
+            }
+            base64Str = base64Str.replaceAll(RegExp(r'\s+'), '');
+            if (base64Str.isNotEmpty) {
+              photoBytes = base64Decode(base64Str);
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (fullName.isEmpty) {
+        if (phoneNumber.isNotEmpty) {
+          fullName = phoneNumber;
+        } else {
+          continue;
+        }
+      }
+
+      parsedList.add(_ParsedVcfContact(
+        fullName: fullName,
+        phoneNumber: phoneNumber,
+        email: email,
+        photoBytes: photoBytes,
+      ));
+    }
+
+    if (parsedList.isEmpty) {
+      return 0;
+    }
+
+    // Sort in ascending alphabetical order by Contact Name
+    parsedList.sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+
+    int count = 0;
+    for (final contact in parsedList) {
+      String? attachmentPath;
+      if (contact.photoBytes != null && contact.photoBytes!.isNotEmpty) {
+        try {
+          final cleanName = contact.fullName.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
+          attachmentPath = await encryptAttachment(
+            fileBytes: contact.photoBytes!,
+            originalFileName: '${cleanName}_photo.jpg',
+          );
+        } catch (_) {}
+      }
+
+      await saveContactItem(
+        fullName: contact.fullName,
+        phoneNumber: contact.phoneNumber,
+        email: contact.email,
+        attachmentPath: attachmentPath,
+      );
+      count++;
+    }
+
+    await loadItems();
+    return count;
   }
 
   /// Adds a generic vault item
@@ -522,3 +646,17 @@ final recentSearchesProvider =
     StateNotifierProvider<RecentSearchesNotifier, List<String>>((ref) {
   return RecentSearchesNotifier();
 });
+
+class _ParsedVcfContact {
+  final String fullName;
+  final String phoneNumber;
+  final String? email;
+  final Uint8List? photoBytes;
+
+  const _ParsedVcfContact({
+    required this.fullName,
+    required this.phoneNumber,
+    this.email,
+    this.photoBytes,
+  });
+}
