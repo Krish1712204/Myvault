@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +23,7 @@ class IdentityDetailsScreen extends ConsumerStatefulWidget {
 class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
   bool _showNumber = false;
   bool _isLoadingAttachment = false;
+  bool _isDownloadingAttachment = false;
 
   Future<void> _confirmDelete(BuildContext context, VaultItem item) async {
     final confirmed = await showDialog<bool>(
@@ -153,6 +155,90 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     }
   }
 
+  Future<void> _downloadAttachment(VaultItem item) async {
+    final attachmentPath = item.attachmentPath;
+    if (attachmentPath == null || attachmentPath.isEmpty) return;
+
+    setState(() => _isDownloadingAttachment = true);
+    try {
+      final bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(attachmentPath);
+      final ext = attachmentPath.contains('.') ? '.${attachmentPath.split('.').last}' : '.jpg';
+      final defaultFileName = '${item.title.replaceAll(' ', '_')}_id$ext';
+
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: 'Download ID Card',
+        fileName: defaultFileName,
+        bytes: bytes,
+      );
+
+      if (savedPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded: $defaultFileName'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloadingAttachment = false);
+      }
+    }
+  }
+
+  Future<void> _uploadAttachment(VaultItem item) async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+      );
+      if (files.isNotEmpty) {
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        final path = await ref.read(vaultItemsProvider.notifier).encryptAttachment(
+              fileBytes: bytes,
+              originalFileName: file.name,
+            );
+        await ref.read(vaultItemsProvider.notifier).saveIdentityItem(
+              id: item.id,
+              title: item.title,
+              documentType: item.documentType ?? item.title,
+              documentNumber: item.documentNumber,
+              fullName: item.fullName,
+              subcategory: item.subcategory ?? 'Government',
+              attachmentPath: path,
+              isFavourite: item.isFavourite,
+            );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ID card uploaded successfully!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Upload failed: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(vaultItemsProvider);
@@ -202,9 +288,6 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     final nameHeading = isPaymentCard
         ? 'Cardholder Name'
         : (isUpi ? 'Account Name' : 'Holder Name');
-    final issuerHeading = isPaymentCard
-        ? 'Bank / Issuer'
-        : (isUpi ? 'Linked App / Bank' : 'Issuing Country');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -433,94 +516,160 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                   child: Column(
                     children: [
                       _buildDetailRow(nameHeading, item.fullName ?? '—'),
-                      const Divider(height: 20),
-                      _buildDetailRow('Record Type', item.documentType ?? item.title),
-                      const Divider(height: 20),
-                      _buildDetailRow(issuerHeading, item.issuingCountry ?? (isPaymentCard ? '—' : 'India')),
-                      if (!isUpi) ...[
-                        const Divider(height: 20),
-                        _buildDetailRow(isPaymentCard ? 'Card Expiry' : 'Expiry Date', item.expiryDate ?? 'Does not expire'),
-                      ],
-                      if (!isPaymentCard && !isUpi) ...[
-                        const Divider(height: 20),
-                        _buildDetailRow('Issue Date', item.issuedDate ?? '—'),
-                      ],
-                      if (item.details != null && item.details!.isNotEmpty) ...[
-                        const Divider(height: 20),
-                        _buildDetailRow('Notes', item.details!),
-                      ],
                     ],
                   ),
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
 
-              // Attachment Card (if present)
-              if (item.attachmentPath != null && item.attachmentPath!.isNotEmpty) ...[
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryLight,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(Icons.attachment_rounded, color: AppColors.primary),
+              // ID Card Attachment Card (Preview & Download)
+              Card(
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: AppColors.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ID Card Document / Scan',
+                        style: TextStyle(
+                          color: AppColors.textPrimaryNavy,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
-                        const SizedBox(width: 14),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Attachment',
-                                style: TextStyle(
-                                  color: AppColors.textPrimaryNavy,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
+                      ),
+                      const SizedBox(height: 12),
+                      if (item.attachmentPath != null && item.attachmentPath!.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryLight,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.badge_rounded, color: AppColors.primary, size: 24),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'ID Document Attached',
+                                    style: TextStyle(
+                                      color: AppColors.textPrimaryNavy,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Saved securely in your vault',
+                                    style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: const BorderSide(color: AppColors.primary),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
                                 ),
+                                icon: _isLoadingAttachment
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.visibility_outlined, size: 18),
+                                label: const Text('Preview', style: TextStyle(fontWeight: FontWeight.bold)),
+                                onPressed: _isLoadingAttachment ? null : () => _previewAttachment(item.attachmentPath!),
                               ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Stored securely in private vault',
-                                style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                ),
+                                icon: _isDownloadingAttachment
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      )
+                                    : const Icon(Icons.download_rounded, size: 18),
+                                label: const Text('Download', style: TextStyle(fontWeight: FontWeight.bold)),
+                                onPressed: _isDownloadingAttachment ? null : () => _downloadAttachment(item),
                               ),
-                            ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: () => _uploadAttachment(item),
+                            icon: const Icon(Icons.refresh_rounded, size: 16),
+                            label: const Text('Replace File', style: TextStyle(fontSize: 12)),
                           ),
                         ),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primaryLight,
-                            foregroundColor: AppColors.primary,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ] else ...[
+                        InkWell(
+                          onTap: () => _uploadAttachment(item),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: AppColors.background,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.primary.withAlpha(60)),
+                            ),
+                            child: const Column(
+                              children: [
+                                Icon(Icons.upload_file_rounded, size: 32, color: AppColors.primary),
+                                SizedBox(height: 8),
+                                Text(
+                                  'Upload ID Card (Image / PDF)',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Tap to select a document or scan to attach',
+                                  style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
+                                ),
+                              ],
+                            ),
                           ),
-                          onPressed: _isLoadingAttachment
-                              ? null
-                              : () => _previewAttachment(item.attachmentPath!),
-                          child: _isLoadingAttachment
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Text('View', style: TextStyle(fontWeight: FontWeight.bold)),
                         ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-              ],
+              ),
+              const SizedBox(height: AppSpacing.md),
 
               // Timestamps Card
               Card(

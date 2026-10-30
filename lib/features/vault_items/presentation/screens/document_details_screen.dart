@@ -46,6 +46,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     super.dispose();
   }
 
+
   void _cleanupTempPreview() {
     if (_tempPreviewFile != null) {
       try {
@@ -389,17 +390,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     }
   }
 
-  String _formatTimestamp(int? millis, String fallback) {
-    if (millis == null) return fallback;
-    final dt = DateTime.fromMillisecondsSinceEpoch(millis);
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final month = months[dt.month - 1];
-    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
-    return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
-  }
-
   String _formatFileSize(int? bytes) {
     if (bytes == null || bytes == 0) return '—';
     if (bytes >= 1024 * 1024) {
@@ -645,8 +635,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     }
 
     final item = matches.first;
-    final createdText = _formatTimestamp(item.createdAt, item.date);
-    final updatedText = _formatTimestamp(item.updatedAt, item.date);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -831,61 +819,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.md),
-
-              // Timestamps Card (Shown for Documents only, hidden for Photos as requested)
-              if (item.category != VaultCategory.photos) ...[
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Added',
-                              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                            ),
-                            Text(
-                              createdText,
-                              style: const TextStyle(
-                                color: AppColors.textPrimaryNavy,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Last Modified',
-                              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                            ),
-                            Text(
-                              updatedText,
-                              style: const TextStyle(
-                                color: AppColors.textPrimaryNavy,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-              ],
               const SizedBox(height: AppSpacing.lg),
 
               // Action Buttons: Delete & Edit

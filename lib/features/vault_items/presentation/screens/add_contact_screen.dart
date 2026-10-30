@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -129,6 +131,118 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
     }
   }
 
+  Future<void> _importVcfFile() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        type: FileType.any,
+      );
+      if (files.isNotEmpty) {
+        final file = files.first;
+        final bytes = await file.readAsBytes();
+        final content = utf8.decode(bytes, allowMalformed: true);
+        _parseAndFillVCard(content);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Contact details loaded from ${file.name}!'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not read contact file: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  void _parseAndFillVCard(String vcf) {
+    final lines = vcf.split(RegExp(r'\r?\n'));
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.startsWith('FN:')) {
+        _nameController.text = line.substring(3).trim();
+      } else if (line.startsWith('N:') && _nameController.text.isEmpty) {
+        final parts = line.substring(2).split(';');
+        final nameParts = parts.reversed.where((p) => p.trim().isNotEmpty).toList();
+        _nameController.text = nameParts.join(' ').trim();
+      } else if (line.startsWith('TEL') && line.contains(':')) {
+        final val = line.split(':').last.trim();
+        if (_phoneController.text.isEmpty) {
+          _phoneController.text = val;
+        } else if (_secPhoneController.text.isEmpty) {
+          _secPhoneController.text = val;
+        }
+      } else if (line.startsWith('EMAIL') && line.contains(':')) {
+        final val = line.split(':').last.trim();
+        if (_emailController.text.isEmpty) {
+          _emailController.text = val;
+        } else if (_secEmailController.text.isEmpty) {
+          _secEmailController.text = val;
+        }
+      } else if (line.startsWith('ORG:')) {
+        _companyController.text = line.substring(4).replaceAll(';', ' ').trim();
+      } else if (line.startsWith('TITLE:')) {
+        _jobTitleController.text = line.substring(6).trim();
+      } else if (line.startsWith('NOTE:')) {
+        _notesController.text = line.substring(5).trim();
+      } else if (line.startsWith('BDAY:')) {
+        _birthdayController.text = line.substring(5).trim();
+      } else if (line.startsWith('ADR') && line.contains(':')) {
+        final val = line.split(':').last.replaceAll(';', ' ').trim();
+        if (val.isNotEmpty) _addressController.text = val;
+      }
+    }
+    setState(() {});
+  }
+
+  void _showVcfGuideDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.contact_phone_rounded, color: AppColors.primary),
+            SizedBox(width: 10),
+            Text('Import from Mobile', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'How to export contacts from your phone:',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy, fontSize: 13),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '1. Open your phone\'s Contacts app (e.g. Google Contacts).\n'
+              '2. Tap "Fix & manage" (or Settings) at the bottom.\n'
+              '3. Tap "Export to file" and save as .vcf.\n'
+              '4. Tap "Import Contact (.vcf)" below and select that file.\n\n'
+              'All details will be imported instantly and stored 100% offline in your vault.',
+              style: TextStyle(color: AppColors.textPrimaryNavy, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _saveContact() async {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
@@ -247,6 +361,64 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Quick Import Banner from Phone
+                if (!isEditing) ...[
+                  Card(
+                    elevation: 0,
+                    color: AppColors.primaryLight.withAlpha(90),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      side: BorderSide(color: AppColors.primary.withAlpha(60)),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.phone_android_rounded, color: AppColors.primary, size: 22),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Import from Mobile Device',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                    color: AppColors.textPrimaryNavy,
+                                  ),
+                                ),
+                                SizedBox(height: 1),
+                                Text(
+                                  'Auto-fill from .vcf export file',
+                                  style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.help_outline_rounded, size: 18, color: AppColors.primary),
+                            tooltip: 'How to export contacts',
+                            onPressed: _showVcfGuideDialog,
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            onPressed: _importVcfFile,
+                            child: const Text('Import .vcf', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
                 // Full Name
                 const Text(
                   'Full Name *',

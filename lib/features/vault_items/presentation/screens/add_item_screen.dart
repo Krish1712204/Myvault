@@ -6,7 +6,6 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/password_generator.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../data/vault_item_model.dart';
-import '../widgets/password_generator_sheet.dart';
 
 class AddItemScreen extends ConsumerStatefulWidget {
   final String? itemId;
@@ -25,7 +24,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   final _urlController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _notesController = TextEditingController();
 
   bool _initialized = false;
   bool _isSaving = false;
@@ -79,7 +77,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         _urlController.text = item.url ?? '';
         _usernameController.text = item.username ?? '';
         _passwordController.text = item.password ?? '';
-        _notesController.text = item.details ?? '';
         _selectedCategory = _categories.contains(item.subcategory) ? item.subcategory! : 'Social';
         _isFavourite = item.isFavourite;
         _strength = PasswordGenerator.calculateStrength(item.password ?? '');
@@ -94,28 +91,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     _urlController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
-    _notesController.dispose();
     super.dispose();
-  }
-
-  Future<void> _generateStrongPassword() async {
-    final generated = await PasswordGeneratorSheet.show(context);
-    if (generated != null && generated.isNotEmpty) {
-      setState(() {
-        _passwordController.text = generated;
-        _obscurePassword = false;
-        _strength = PasswordGenerator.calculateStrength(generated);
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Strong password applied!'),
-            backgroundColor: AppColors.success,
-            duration: Duration(seconds: 1),
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _saveItem() async {
@@ -132,7 +108,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     final password = _passwordController.text;
     if (password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter or generate a password')),
+        const SnackBar(content: Text('Please enter a password')),
       );
       return;
     }
@@ -148,7 +124,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
             username: _usernameController.text.trim(),
             password: password,
             subcategory: _selectedCategory,
-            notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+            notes: null,
             isFavourite: _isFavourite,
           );
 
@@ -316,37 +292,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
               ),
             ],
 
-            const SizedBox(height: AppSpacing.sm),
-
-            // Generate Strong Password button
-            InkWell(
-              onTap: _generateStrongPassword,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withAlpha(80),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primary.withAlpha(50)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 20),
-                    SizedBox(width: 10),
-                    Text(
-                      'Generate Strong Password',
-                      style: TextStyle(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Spacer(),
-                    Icon(Icons.arrow_forward_ios_rounded, color: AppColors.primary, size: 14),
-                  ],
-                ),
-              ),
-            ),
             const SizedBox(height: AppSpacing.md),
 
             // 4. Website URL (Optional)
@@ -390,21 +335,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
                     if (val != null) setState(() => _selectedCategory = val);
                   },
                 ),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 6. Notes (Optional)
-            const Text(
-              'Notes (Optional)',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _notesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                hintText: 'Security question hints, recovery notes, etc.',
               ),
             ),
             const SizedBox(height: AppSpacing.xl),

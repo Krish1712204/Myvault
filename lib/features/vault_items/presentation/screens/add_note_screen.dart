@@ -22,7 +22,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _contentController = TextEditingController();
-  final _tagsController = TextEditingController();
 
   bool _initialized = false;
   bool _isSaving = false;
@@ -58,7 +57,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
       if (item.id.isNotEmpty) {
         _titleController.text = item.title;
         _contentController.text = item.details ?? '';
-        _tagsController.text = item.tags ?? '';
         if (item.subcategory != null && _categories.contains(item.subcategory)) {
           _selectedCategory = item.subcategory!;
         }
@@ -71,7 +69,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
   void dispose() {
     _titleController.dispose();
     _contentController.dispose();
-    _tagsController.dispose();
     super.dispose();
   }
 
@@ -82,18 +79,12 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final cleanTags = _tagsController.text
-          .split(',')
-          .map((t) => t.trim().replaceAll('#', ''))
-          .where((t) => t.isNotEmpty)
-          .join(',');
-
       await ref.read(vaultItemsProvider.notifier).saveNoteItem(
             id: widget.itemId,
             title: _titleController.text.trim(),
             content: _contentController.text.trim(),
             category: _selectedCategory,
-            tags: cleanTags.isNotEmpty ? cleanTags : null,
+            tags: null,
             isFavourite: _isFavourite,
           );
 
@@ -211,77 +202,36 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // Category & Tags Row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Category Dropdown
-                    Expanded(
-                      flex: 4,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Category',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedCategory,
-                                isExpanded: true,
-                                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
-                                items: _categories
-                                    .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14))))
-                                    .toList(),
-                                onChanged: (val) {
-                                  if (val != null) setState(() => _selectedCategory = val);
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                // Category Dropdown
+                const Text(
+                  'Category',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimaryNavy,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedCategory,
+                      isExpanded: true,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
+                      items: _categories
+                          .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14))))
+                          .toList(),
+                      onChanged: (val) {
+                        if (val != null) setState(() => _selectedCategory = val);
+                      },
                     ),
-                    const SizedBox(width: 12),
-                    // Tags Field
-                    Expanded(
-                      flex: 5,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Tags (comma separated)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _tagsController,
-                            decoration: const InputDecoration(
-                              hintText: 'work, urgent, 2fa',
-                              prefixIcon: Icon(Icons.tag_rounded, size: 18, color: AppColors.textMutedNavy),
-                              fillColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
 

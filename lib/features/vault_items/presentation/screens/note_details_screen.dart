@@ -78,15 +78,6 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
     return '${dt.day} $month ${dt.year}, $hour:$minute $ampm';
   }
 
-  List<String> _parseTags(String? tags) {
-    if (tags == null || tags.trim().isEmpty) return [];
-    return tags
-        .split(',')
-        .map((t) => t.trim().replaceAll('#', ''))
-        .where((t) => t.isNotEmpty)
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final allItems = ref.watch(vaultItemsProvider);
@@ -122,7 +113,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
 
     final item = matches.first;
     final content = item.details ?? '';
-    final tags = _parseTags(item.tags);
+
     final wordCount = content.trim().isEmpty
         ? 0
         : content.trim().split(RegExp(r'\s+')).length;
@@ -250,47 +241,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                         ),
                       ],
                     ),
-                    if (tags.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      const Divider(height: 1, color: AppColors.border),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: tags.map((t) {
-                          return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.background,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.border),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  '#',
-                                  style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  t,
-                                  style: const TextStyle(
-                                    color: AppColors.textPrimaryNavy,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ],
+
                   ],
                 ),
               ),

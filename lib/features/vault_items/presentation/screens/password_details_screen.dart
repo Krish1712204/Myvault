@@ -328,8 +328,6 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                   children: [
                     _buildMetaRow('Category', item.subcategory ?? 'Website'),
                     const SizedBox(height: 12),
-                    _buildMetaRow('Notes', (item.details != null && item.details!.isNotEmpty) ? item.details! : 'No notes added.'),
-                    const SizedBox(height: 12),
                     _buildMetaRow('Created', createdText),
                     const SizedBox(height: 12),
                     _buildMetaRow('Updated', updatedText),
