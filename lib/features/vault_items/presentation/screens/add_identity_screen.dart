@@ -35,7 +35,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
   String _subcategory = 'Government';
   bool _noExpiry = false;
   bool _isFavourite = false;
-  bool _obscureNumber = true;
+  bool _obscureNumber = false;
   bool _isSaving = false;
   bool _initialized = false;
 
@@ -50,16 +50,34 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
     'PAN Card',
     'Passport',
     'Driving License',
+    'Debit Card',
+    'Credit Card',
+    'UPI ID',
     'Voter ID',
     'Custom ID',
   ];
 
   final List<String> _subcategories = [
     'Government',
+    'Finance',
     'Personal',
     'Work',
     'Other',
   ];
+
+  static const List<Map<String, String>> _quickPresets = [
+    {'type': 'Aadhaar Card', 'title': 'Aadhaar Card', 'cat': 'Government'},
+    {'type': 'PAN Card', 'title': 'PAN Card', 'cat': 'Government'},
+    {'type': 'Passport', 'title': 'Passport', 'cat': 'Government'},
+    {'type': 'Driving License', 'title': 'Driving License', 'cat': 'Government'},
+    {'type': 'Debit Card', 'title': 'Debit Card', 'cat': 'Finance'},
+    {'type': 'Credit Card', 'title': 'Credit Card', 'cat': 'Finance'},
+    {'type': 'UPI ID', 'title': 'UPI ID', 'cat': 'Finance'},
+    {'type': 'Voter ID', 'title': 'Voter ID', 'cat': 'Government'},
+  ];
+
+  bool get _isPaymentCard => _documentType == 'Debit Card' || _documentType == 'Credit Card';
+  bool get _isUpi => _documentType == 'UPI ID';
 
   @override
   void didChangeDependencies() {
@@ -83,7 +101,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
             : (_idTypes.contains(item.title) ? item.title : 'Custom ID');
         _idNumberController.text = item.documentNumber ?? '';
         _fullNameController.text = item.fullName ?? '';
-        _countryController.text = item.issuingCountry ?? 'India';
+        _countryController.text = item.issuingCountry ?? (_isPaymentCard ? 'HDFC Bank' : 'India');
         _issuedDateController.text = item.issuedDate ?? '';
         _expiryDateController.text = item.expiryDate ?? '';
         _noExpiry = item.expiryDate == null || item.expiryDate == 'Does not expire' || item.expiryDate!.isEmpty;
@@ -108,6 +126,21 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
     _expiryDateController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  void _applyQuickPreset(Map<String, String> preset) {
+    setState(() {
+      _documentType = preset['type']!;
+      _titleController.text = preset['title']!;
+      _subcategory = preset['cat']!;
+      if (_isPaymentCard) {
+        if (_countryController.text == 'India') _countryController.text = '';
+      } else if (_isUpi) {
+        if (_countryController.text == 'India') _countryController.text = 'Google Pay / HDFC';
+      } else {
+        if (_countryController.text.isEmpty) _countryController.text = 'India';
+      }
+    });
   }
 
   Future<void> _pickAttachment() async {
@@ -222,7 +255,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.itemId != null ? 'ID Card updated successfully' : 'ID Card saved securely'),
+          content: Text(widget.itemId != null ? '$title updated successfully' : '$title saved to vault!'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -232,16 +265,40 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save ID card: $e'),
+          content: Text('Failed to save: $e'),
           backgroundColor: AppColors.error,
         ),
       );
     }
   }
 
+  String _formatFileSize(int? bytes) {
+    if (bytes == null || bytes == 0) return '—';
+    if (bytes >= 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / 1024).toStringAsFixed(0)} KB';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
+
+    final numberLabel = _isPaymentCard
+        ? 'Last 4 Digits *'
+        : (_isUpi ? 'UPI ID *' : 'ID / Document Number *');
+    final numberHint = _isPaymentCard
+        ? 'e.g. 4821 (Never enter CVV or PIN)'
+        : (_isUpi ? 'e.g. username@okhdfcbank' : 'e.g. 1234 5678 9012 or ABCDE1234F');
+    final nameLabel = _isPaymentCard
+        ? 'Cardholder Name'
+        : (_isUpi ? 'Account Holder Name' : 'Full Name on Document');
+    final issuerLabel = _isPaymentCard
+        ? 'Issuing Bank / Card Brand'
+        : (_isUpi ? 'Linked App / Bank' : 'Issuing Country');
+    final issuerHint = _isPaymentCard
+        ? 'e.g. HDFC Bank, SBI, ICICI'
+        : (_isUpi ? 'e.g. Google Pay, PhonePe, Paytm' : 'e.g. India');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -251,7 +308,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          isEditing ? 'Edit ID Card' : 'Add ID Card',
+          isEditing ? 'Edit Item' : (_isPaymentCard ? 'Add Payment Card' : (_isUpi ? 'Add UPI ID' : 'Add ID Card')),
           style: const TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
@@ -288,9 +345,77 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Document Type Dropdown
+                // Quick 1-Tap Presets
+                if (!isEditing) ...[
+                  const Text(
+                    'Quick Presets (1-Tap Selection)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: AppColors.textMutedNavy,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: _quickPresets.map((preset) {
+                        final isSelected = _documentType == preset['type'];
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ActionChip(
+                            label: Text(preset['title']!),
+                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isSelected ? AppColors.primary : AppColors.border,
+                              ),
+                            ),
+                            onPressed: () => _applyQuickPreset(preset),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
+                // Banking Safety Alert Box (When storing Debit/Credit card)
+                if (_isPaymentCard) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.shade300),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.shield_outlined, color: Colors.amber, size: 20),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Bank Security Rule: Never store CVV, ATM PIN, or Net Banking passwords. Only safe reference details (card nickname, last 4 digits, expiry) are kept.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF7A5800), height: 1.3),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
+                // Document / Card Type Selector
                 const Text(
-                  'Document Type *',
+                  'Record Type *',
                   style: TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
@@ -301,7 +426,10 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 DropdownButtonFormField<String>(
                   initialValue: _documentType,
                   decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.textMutedNavy),
+                    prefixIcon: Icon(
+                      _isPaymentCard ? Icons.credit_card_rounded : (_isUpi ? Icons.account_balance_wallet_rounded : Icons.badge_outlined),
+                      color: AppColors.primary,
+                    ),
                     fillColor: Colors.white,
                     filled: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -316,6 +444,9 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                         if (!isEditing || _titleController.text.isEmpty) {
                           _titleController.text = val;
                         }
+                        if (_isPaymentCard || _isUpi) {
+                          _subcategory = 'Finance';
+                        }
                       });
                     }
                   },
@@ -323,9 +454,9 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 const SizedBox(height: AppSpacing.md),
 
                 // Title Field
-                const Text(
-                  'Card Title *',
-                  style: TextStyle(
+                Text(
+                  _isPaymentCard ? 'Card Nickname / Title *' : 'Title *',
+                  style: const TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -336,7 +467,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                   controller: _titleController,
                   validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a title' : null,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Aadhaar Card, Passport',
+                    hintText: _isPaymentCard ? 'e.g. HDFC Millennia Debit Card' : 'e.g. Aadhaar Card, Passport',
                     prefixIcon: const Icon(Icons.title_rounded, color: AppColors.textMutedNavy),
                     fillColor: Colors.white,
                     filled: true,
@@ -345,10 +476,10 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // ID Number Field
-                const Text(
-                  'ID / Document Number',
-                  style: TextStyle(
+                // Number Field (Last 4 digits / UPI ID / ID Number)
+                Text(
+                  numberLabel,
+                  style: const TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -358,17 +489,21 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 TextFormField(
                   controller: _idNumberController,
                   obscureText: _obscureNumber,
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return 'Please enter ${_isPaymentCard ? "last 4 digits" : (_isUpi ? "UPI ID" : "document number")}';
+                    }
+                    return null;
+                  },
                   decoration: InputDecoration(
-                    hintText: 'e.g. 1234 5678 9012 or ABCDE1234F',
-                    prefixIcon: const Icon(Icons.pin_outlined, color: AppColors.textMutedNavy),
+                    hintText: numberHint,
+                    prefixIcon: Icon(_isPaymentCard ? Icons.credit_card_outlined : Icons.pin_outlined, color: AppColors.textMutedNavy),
                     suffixIcon: IconButton(
                       icon: Icon(
                         _obscureNumber ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                         color: AppColors.textMutedNavy,
                       ),
-                      onPressed: () {
-                        setState(() => _obscureNumber = !_obscureNumber);
-                      },
+                      onPressed: () => setState(() => _obscureNumber = !_obscureNumber),
                     ),
                     fillColor: Colors.white,
                     filled: true,
@@ -377,10 +512,10 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // Holder Full Name Field
-                const Text(
-                  'Full Name / Holder Name',
-                  style: TextStyle(
+                // Full Name / Cardholder Name
+                Text(
+                  nameLabel,
+                  style: const TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
@@ -390,7 +525,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 TextFormField(
                   controller: _fullNameController,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Prathamesh Shelar',
+                    hintText: 'e.g. Krishna Shelar',
                     prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textMutedNavy),
                     fillColor: Colors.white,
                     filled: true,
@@ -399,247 +534,76 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // Subcategory Selection
-                const Text(
-                  'Category',
-                  style: TextStyle(
+                // Bank / Issuer / Issuing Country
+                Text(
+                  issuerLabel,
+                  style: const TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  children: _subcategories.map((sub) {
-                    final selected = _subcategory == sub;
-                    return ChoiceChip(
-                      label: Text(sub),
-                      selected: selected,
-                      selectedColor: AppColors.primary,
-                      backgroundColor: Colors.white,
-                      labelStyle: TextStyle(
-                        color: selected ? Colors.white : AppColors.textPrimaryNavy,
-                        fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-                      ),
-                      onSelected: (val) {
-                        if (val) setState(() => _subcategory = sub);
-                      },
-                    );
-                  }).toList(),
+                TextFormField(
+                  controller: _countryController,
+                  decoration: InputDecoration(
+                    hintText: issuerHint,
+                    prefixIcon: Icon(_isPaymentCard ? Icons.account_balance_outlined : Icons.flag_outlined, color: AppColors.textMutedNavy),
+                    fillColor: Colors.white,
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // Issued Date & Country
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Issue Date',
-                            style: TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _issuedDateController,
-                            readOnly: true,
-                            onTap: () => _selectDate(context, _issuedDateController),
-                            decoration: InputDecoration(
-                              hintText: 'Select date',
-                              prefixIcon: const Icon(Icons.calendar_today_outlined, size: 18, color: AppColors.textMutedNavy),
-                              fillColor: Colors.white,
-                              filled: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Issuing Country',
-                            style: TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _countryController,
-                            decoration: InputDecoration(
-                              hintText: 'e.g. India',
-                              prefixIcon: const Icon(Icons.flag_outlined, size: 18, color: AppColors.textMutedNavy),
-                              fillColor: Colors.white,
-                              filled: true,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Expiry Date / No Expiry Switch
+                // Expiry Date (or MM/YY for cards)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Expiry Date',
-                      style: TextStyle(
+                    Text(
+                      _isPaymentCard ? 'Card Expiry (MM/YY)' : 'Expiry Date',
+                      style: const TextStyle(
                         color: AppColors.textPrimaryNavy,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
                     ),
-                    Row(
-                      children: [
-                        const Text('No Expiry', style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13)),
-                        Switch(
-                          value: _noExpiry,
-                          activeThumbColor: AppColors.primary,
-                          onChanged: (val) {
-                            setState(() {
-                              _noExpiry = val;
-                              if (val) _expiryDateController.clear();
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                if (!_noExpiry) ...[
-                  const SizedBox(height: 4),
-                  TextFormField(
-                    controller: _expiryDateController,
-                    readOnly: true,
-                    onTap: () => _selectDate(context, _expiryDateController),
-                    decoration: InputDecoration(
-                      hintText: 'Select expiry date',
-                      prefixIcon: const Icon(Icons.event_outlined, size: 18, color: AppColors.textMutedNavy),
-                      fillColor: Colors.white,
-                      filled: true,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: AppSpacing.md),
-
-                // Attachment Section
-                const Text(
-                  'Card Photo or Document Attachment (Optional)',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      children: [
-                        if (_newPickedAttachment != null) ...[
-                          Row(
-                            children: [
-                              const Icon(Icons.check_circle_rounded, color: AppColors.success, size: 24),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _newPickedAttachment!.name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      '${(_newPickedAttachmentSize / 1024).toStringAsFixed(1)} KB (Ready to encrypt)',
-                                      style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, color: AppColors.error),
-                                onPressed: () => setState(() {
-                                  _newPickedAttachment = null;
-                                  _newPickedAttachmentBytes = null;
-                                  _newPickedAttachmentSize = 0;
-                                }),
-                              ),
-                            ],
-                          ),
-                        ] else if (_existingAttachmentPath != null && _existingAttachmentPath!.isNotEmpty) ...[
-                          Row(
-                            children: [
-                              const Icon(Icons.lock_rounded, color: AppColors.primary, size: 24),
-                              const SizedBox(width: 10),
-                              const Expanded(
-                                child: Text(
-                                  'Encrypted attachment attached to ID',
-                                  style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                                onPressed: () => setState(() => _existingAttachmentPath = null),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          Row(
-                            children: [
-                              const Icon(Icons.attach_file_rounded, color: AppColors.textMutedNavy),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'No file attached (JPG, PNG, PDF up to 25MB)',
-                                  style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
-                                ),
-                              ),
-                              OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: const BorderSide(color: AppColors.primary),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                                icon: const Icon(Icons.upload_file_rounded, size: 16),
-                                label: const Text('Pick File'),
-                                onPressed: _pickAttachment,
-                              ),
-                            ],
+                    if (!_isPaymentCard)
+                      Row(
+                        children: [
+                          const Text('No Expiry', style: TextStyle(fontSize: 12, color: AppColors.textMutedNavy)),
+                          Switch(
+                            value: _noExpiry,
+                            activeThumbColor: AppColors.primary,
+                            onChanged: (val) {
+                              setState(() {
+                                _noExpiry = val;
+                                if (val) _expiryDateController.clear();
+                              });
+                            },
                           ),
                         ],
-                      ],
-                    ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                TextFormField(
+                  controller: _expiryDateController,
+                  readOnly: !_isPaymentCard,
+                  onTap: _isPaymentCard ? null : (_noExpiry ? null : () => _selectDate(context, _expiryDateController)),
+                  decoration: InputDecoration(
+                    hintText: _isPaymentCard ? 'e.g. 08/29' : (_noExpiry ? 'Does not expire' : 'Select expiry date'),
+                    prefixIcon: const Icon(Icons.event_outlined, size: 18, color: AppColors.textMutedNavy),
+                    fillColor: Colors.white,
+                    filled: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
 
                 // Notes Field
                 const Text(
-                  'Notes (Optional)',
+                  'Notes / Billing Details (Optional)',
                   style: TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontWeight: FontWeight.w600,
@@ -649,9 +613,11 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _notesController,
-                  maxLines: 3,
+                  maxLines: 2,
                   decoration: InputDecoration(
-                    hintText: 'Additional details, security PIN, or reminders...',
+                    hintText: _isPaymentCard
+                        ? 'e.g. Salary account debit card, billing cycle date'
+                        : 'Additional details or reminders...',
                     fillColor: Colors.white,
                     filled: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -659,7 +625,92 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
 
-                // Mark as Favourite Switch
+                // Attachment (Front/Back photo or PDF)
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Encrypted Document Scan (Optional)',
+                          style: TextStyle(
+                            color: AppColors.textPrimaryNavy,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Attach a photo or PDF scan encrypted on device',
+                          style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
+                        ),
+                        const SizedBox(height: 10),
+                        if (_newPickedAttachment != null) ...[
+                          Row(
+                            children: [
+                              const Icon(Icons.attach_file_rounded, color: AppColors.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${_newPickedAttachment!.name} (${_formatFileSize(_newPickedAttachmentSize)})',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () {
+                                  setState(() {
+                                    _newPickedAttachment = null;
+                                    _newPickedAttachmentBytes = null;
+                                    _newPickedAttachmentSize = 0;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ] else if (_existingAttachmentPath != null) ...[
+                          Row(
+                            children: [
+                              const Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Scan attached (Encrypted on device)',
+                                  style: TextStyle(color: AppColors.textPrimaryNavy, fontSize: 12),
+                                ),
+                              ),
+                              OutlinedButton(
+                                onPressed: _pickAttachment,
+                                child: const Text('Replace', style: TextStyle(fontSize: 11)),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          OutlinedButton.icon(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.upload_file_rounded, size: 18),
+                            label: const Text('Attach Scan / Photo'),
+                            onPressed: _pickAttachment,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
+
+                // Mark as Favourite
                 Card(
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -674,10 +725,6 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                         fontWeight: FontWeight.w600,
                         fontSize: 14,
                       ),
-                    ),
-                    subtitle: const Text(
-                      'Quick access from dashboard favorites',
-                      style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
                     ),
                     value: _isFavourite,
                     activeThumbColor: AppColors.primary,

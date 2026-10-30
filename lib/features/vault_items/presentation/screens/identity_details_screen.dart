@@ -194,6 +194,18 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     final createdText = _formatTimestamp(item.createdAt, item.date);
     final updatedText = _formatTimestamp(item.updatedAt, item.date);
 
+    final isPaymentCard = item.documentType == 'Debit Card' || item.documentType == 'Credit Card';
+    final isUpi = item.documentType == 'UPI ID';
+    final numberHeading = isPaymentCard
+        ? 'CARD NUMBER (LAST 4 DIGITS)'
+        : (isUpi ? 'UPI ID' : 'ID NUMBER');
+    final nameHeading = isPaymentCard
+        ? 'Cardholder Name'
+        : (isUpi ? 'Account Name' : 'Holder Name');
+    final issuerHeading = isPaymentCard
+        ? 'Bank / Issuer'
+        : (isUpi ? 'Linked App / Bank' : 'Issuing Country');
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -201,9 +213,9 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
-          'ID Card Details',
-          style: TextStyle(
+        title: Text(
+          isPaymentCard ? 'Card Details' : (isUpi ? 'UPI Details' : 'ID Card Details'),
+          style: const TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -351,9 +363,9 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'ID NUMBER',
-                            style: TextStyle(
+                          Text(
+                            numberHeading,
+                            style: const TextStyle(
                               color: AppColors.textMutedNavy,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -420,15 +432,19 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      _buildDetailRow('Holder Name', item.fullName ?? '—'),
+                      _buildDetailRow(nameHeading, item.fullName ?? '—'),
                       const Divider(height: 20),
-                      _buildDetailRow('Document Type', item.documentType ?? item.title),
+                      _buildDetailRow('Record Type', item.documentType ?? item.title),
                       const Divider(height: 20),
-                      _buildDetailRow('Issuing Country', item.issuingCountry ?? 'India'),
-                      const Divider(height: 20),
-                      _buildDetailRow('Issue Date', item.issuedDate ?? '—'),
-                      const Divider(height: 20),
-                      _buildDetailRow('Expiry Date', item.expiryDate ?? 'Does not expire'),
+                      _buildDetailRow(issuerHeading, item.issuingCountry ?? (isPaymentCard ? '—' : 'India')),
+                      if (!isUpi) ...[
+                        const Divider(height: 20),
+                        _buildDetailRow(isPaymentCard ? 'Card Expiry' : 'Expiry Date', item.expiryDate ?? 'Does not expire'),
+                      ],
+                      if (!isPaymentCard && !isUpi) ...[
+                        const Divider(height: 20),
+                        _buildDetailRow('Issue Date', item.issuedDate ?? '—'),
+                      ],
                       if (item.details != null && item.details!.isNotEmpty) ...[
                         const Divider(height: 20),
                         _buildDetailRow('Notes', item.details!),

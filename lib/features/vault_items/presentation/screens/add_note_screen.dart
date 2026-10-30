@@ -34,7 +34,20 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     'Work',
     'Ideas',
     'Finance',
+    'Recovery Codes',
+    'Security',
+    'Medical',
     'Other',
+  ];
+
+  static const List<Map<String, String>> _quickNotePresets = [
+    {'title': 'Idea', 'cat': 'Ideas', 'hint': '💡 Idea concept:\n'},
+    {'title': '2FA Recovery Keys', 'cat': 'Recovery Codes', 'hint': 'Google / GitHub Emergency Recovery Codes:\n1. \n2. \n3. '},
+    {'title': 'Meeting Notes', 'cat': 'Work', 'hint': 'Date: \nKey takeaways:\n- '},
+    {'title': 'Shopping List', 'cat': 'Personal', 'hint': 'Items to buy:\n- '},
+    {'title': 'Diary Entry', 'cat': 'Personal', 'hint': 'Today was...'},
+    {'title': 'Password Hint', 'cat': 'Security', 'hint': 'Secret question / master password hint:\n'},
+    {'title': 'Medical Record', 'cat': 'Medical', 'hint': 'Prescription / consultation summary:\n'},
   ];
 
   @override
@@ -70,6 +83,16 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     _contentController.dispose();
     _tagsController.dispose();
     super.dispose();
+  }
+
+  void _applyPreset(Map<String, String> preset) {
+    setState(() {
+      _titleController.text = preset['title']!;
+      _selectedCategory = preset['cat']!;
+      if (_contentController.text.trim().isEmpty) {
+        _contentController.text = preset['hint']!;
+      }
+    });
   }
 
   Future<void> _saveNote() async {
@@ -174,6 +197,48 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Quick Presets
+                if (!isEditing) ...[
+                  const Text(
+                    'Quick Presets (1-Tap Selection)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: AppColors.textMutedNavy,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: _quickNotePresets.map((preset) {
+                        final isSelected = _titleController.text.trim().toLowerCase() == preset['title']!.toLowerCase();
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ActionChip(
+                            label: Text(preset['title']!),
+                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isSelected ? AppColors.primary : AppColors.border,
+                              ),
+                            ),
+                            onPressed: () => _applyPreset(preset),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
                 // Title Field
                 const Text(
                   'Title *',
@@ -187,7 +252,7 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                 TextFormField(
                   controller: _titleController,
                   decoration: const InputDecoration(
-                    hintText: 'e.g. Project Plan or Meeting Summary',
+                    hintText: 'e.g. Project Plan, 2FA Recovery Keys, Ideas',
                     prefixIcon: Icon(Icons.title_rounded, color: AppColors.textMutedNavy),
                     fillColor: Colors.white,
                   ),
@@ -219,31 +284,34 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                             ),
                           ),
                           const SizedBox(height: 6),
-                          DropdownButtonFormField<String>(
-                            initialValue: _selectedCategory,
-                            decoration: const InputDecoration(
-                              fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.border),
                             ),
-                            items: _categories.map((c) {
-                              return DropdownMenuItem(
-                                value: c,
-                                child: Text(c, style: const TextStyle(fontSize: 14)),
-                              );
-                            }).toList(),
-                            onChanged: (val) {
-                              if (val != null) {
-                                setState(() => _selectedCategory = val);
-                              }
-                            },
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedCategory,
+                                isExpanded: true,
+                                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
+                                items: _categories
+                                    .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14))))
+                                    .toList(),
+                                onChanged: (val) {
+                                  if (val != null) setState(() => _selectedCategory = val);
+                                },
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // Tags Input
+                    // Tags Field
                     Expanded(
-                      flex: 6,
+                      flex: 5,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -259,10 +327,9 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                           TextFormField(
                             controller: _tagsController,
                             decoration: const InputDecoration(
-                              hintText: 'work, ideas, 2026',
-                              prefixIcon: Icon(Icons.tag_rounded, color: AppColors.textMutedNavy, size: 20),
+                              hintText: 'work, urgent, 2fa',
+                              prefixIcon: Icon(Icons.tag_rounded, size: 18, color: AppColors.textMutedNavy),
                               fillColor: Colors.white,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                             ),
                           ),
                         ],
@@ -270,12 +337,11 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: AppSpacing.md),
 
                 // Note Content Field
                 const Text(
-                  'Note Content *',
+                  'Content *',
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimaryNavy,
@@ -285,82 +351,43 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _contentController,
-                  minLines: 8,
-                  maxLines: null,
-                  keyboardType: TextInputType.multiline,
+                  maxLines: 8,
                   decoration: const InputDecoration(
-                    hintText: 'Write your private note here...',
+                    hintText: 'Write your private note, codes, or thoughts here...',
                     fillColor: Colors.white,
-                    contentPadding: EdgeInsets.all(16),
+                    alignLabelWithHint: true,
                   ),
                   validator: (val) {
                     if (val == null || val.trim().isEmpty) {
-                      return 'Note content cannot be empty';
+                      return 'Please enter note content';
                     }
                     return null;
                   },
                 ),
-
                 const SizedBox(height: AppSpacing.md),
 
-                // Mark as Favorite Switch
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
+                // Favourite Switch Card
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
+                    side: const BorderSide(color: AppColors.border),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.star_rounded, color: Colors.amber, size: 22),
-                          SizedBox(width: 10),
-                          Text(
-                            'Mark as Favourite',
-                            style: TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                  child: SwitchListTile(
+                    title: const Text(
+                      'Mark as Favourite',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimaryNavy,
+                        fontSize: 14,
                       ),
-                      Switch(
-                        value: _isFavourite,
-                        activeThumbColor: AppColors.primary,
-                        onChanged: (val) => setState(() => _isFavourite = val),
-                      ),
-                    ],
+                    ),
+                    value: _isFavourite,
+                    activeThumbColor: AppColors.primary,
+                    onChanged: (val) => setState(() => _isFavourite = val),
                   ),
                 ),
-
-                const SizedBox(height: AppSpacing.lg),
-
-                // Security Note
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.lock_outline_rounded, color: AppColors.primary, size: 20),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Notes are encrypted at rest with SQLCipher AES-256 in app-private device storage.',
-                          style: TextStyle(
-                            color: AppColors.textPrimaryNavy,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: AppSpacing.xl),
               ],
             ),
           ),

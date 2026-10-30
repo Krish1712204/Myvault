@@ -80,8 +80,8 @@ class QuickActionsRow extends StatelessWidget {
                   ),
                   child: const Icon(Icons.badge_outlined, color: AppColors.categoryIdCards),
                 ),
-                title: const Text('ID Card', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Aadhaar, PAN, Passport, Driving License, Voter ID'),
+                title: const Text('ID & Cards', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Aadhaar, PAN, Passport, Debit/Credit Card, UPI ID'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-id');
@@ -96,8 +96,8 @@ class QuickActionsRow extends StatelessWidget {
                   ),
                   child: const Icon(Icons.file_present_rounded, color: AppColors.categoryDocuments),
                 ),
-                title: const Text('Document or Photo', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Encrypted PDF, JPG, PNG, WEBP, or TXT file'),
+                title: const Text('Document or File', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Encrypted PDF, Word, Excel, ZIP, APK, Photo, or File'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-document');
@@ -112,8 +112,8 @@ class QuickActionsRow extends StatelessWidget {
                   ),
                   child: const Icon(Icons.sticky_note_2_rounded, color: AppColors.categoryNotes),
                 ),
-                title: const Text('Note', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Secure, multiline private notes with tags'),
+                title: const Text('Note & 2FA Codes', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Private notes, ideas, diary, 2FA recovery codes'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-note');

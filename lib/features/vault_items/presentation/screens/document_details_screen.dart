@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +24,7 @@ class DocumentDetailsScreen extends ConsumerStatefulWidget {
 
 class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
   bool _isLoadingPreview = false;
+  bool _isDownloading = false;
   Uint8List? _previewBytes;
   String? _previewText;
   String? _previewError;
@@ -38,7 +40,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
 
   @override
   void dispose() {
-    // Best-effort cleanup of any temporary preview files created for external viewers
     if (_tempPreviewFile != null) {
       try {
         if (_tempPreviewFile!.existsSync()) {
@@ -58,7 +59,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     final filePath = item.filePath;
     if (filePath == null || filePath.isEmpty) return;
 
-    // Check if this is a seeded placeholder without an actual disk file
     if (filePath.startsWith('seed_')) {
       setState(() {
         _previewError = 'This is a sample vault item placeholder. Real uploaded documents are encrypted and previewed on demand.';
@@ -88,6 +88,60 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         _isLoadingPreview = false;
         _previewError = 'Could not preview file: ${e.toString()}';
       });
+    }
+  }
+
+  Future<void> _downloadFile(VaultItem item) async {
+    if (_isDownloading) return;
+    final filePath = item.filePath;
+    if (filePath == null || filePath.isEmpty) return;
+
+    if (filePath.startsWith('seed_')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This is a sample placeholder. Real uploaded documents can be downloaded.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isDownloading = true);
+
+    try {
+      final bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
+      final ext = item.fileExtension?.isNotEmpty == true
+          ? (item.fileExtension!.startsWith('.') ? item.fileExtension! : '.${item.fileExtension}')
+          : '';
+      final defaultFileName = item.fileName ?? '${item.title}$ext';
+
+      final savedPath = await FilePicker.saveFile(
+        dialogTitle: 'Download Decrypted Document',
+        fileName: defaultFileName,
+        bytes: bytes,
+      );
+
+      if (savedPath != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded: $defaultFileName'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Download failed: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isDownloading = false);
+      }
     }
   }
 
@@ -345,6 +399,18 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           ),
         ),
         actions: [
+          // 1-Tap Download in AppBar
+          IconButton(
+            icon: _isDownloading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                  )
+                : const Icon(Icons.download_rounded, color: AppColors.primary, size: 24),
+            tooltip: 'Download to Device',
+            onPressed: _isDownloading ? null : () => _downloadFile(item),
+          ),
           IconButton(
             icon: Icon(
               item.isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
@@ -358,13 +424,25 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
             onSelected: (val) {
-              if (val == 'edit') {
+              if (val == 'download') {
+                _downloadFile(item);
+              } else if (val == 'edit') {
                 context.push('/edit-document/${item.id}');
               } else if (val == 'delete') {
                 _confirmDelete(context, item);
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(
+                value: 'download',
+                child: Row(
+                  children: [
+                    Icon(Icons.download_rounded, size: 18, color: AppColors.primary),
+                    SizedBox(width: 8),
+                    Text('Download to Device'),
+                  ],
+                ),
+              ),
               const PopupMenuItem(
                 value: 'edit',
                 child: Row(
@@ -398,6 +476,29 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             children: [
               // Preview area
               _buildPreviewContent(item),
+              const SizedBox(height: AppSpacing.md),
+
+              // Prominent Download / Save to Device Button
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: _isDownloading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.download_rounded, size: 22),
+                label: Text(
+                  _isDownloading ? 'Decrypting & Exporting...' : 'Download / Save to Device',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+                onPressed: _isDownloading ? null : () => _downloadFile(item),
+              ),
               const SizedBox(height: AppSpacing.md),
 
               // File Details Card
@@ -480,7 +581,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: AppSpacing.xl),
+              const SizedBox(height: AppSpacing.lg),
 
               // Action Buttons
               Row(
@@ -502,8 +603,9 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
+                        backgroundColor: AppColors.primaryLight,
+                        foregroundColor: AppColors.primary,
+                        elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),

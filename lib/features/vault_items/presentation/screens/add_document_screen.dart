@@ -39,6 +39,21 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   String? _existingFileName;
   int? _existingFileSize;
 
+  static const List<String> _quickDocPresets = [
+    'Resume',
+    'Degree / Certificate',
+    'Tax Document',
+    'Insurance Policy',
+    'Medical Report',
+    'Offer Letter',
+    'Payslip',
+    'Aadhaar Scan',
+    'PAN Scan',
+    'Passport Scan',
+    'Driving License',
+    'Personal Photo',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -82,19 +97,18 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   Future<void> _pickFile() async {
     try {
       final files = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'txt'],
+        type: FileType.any,
       );
 
       if (files.isNotEmpty) {
         final file = files.first;
         final bytes = await file.readAsBytes();
         final size = file.lengthSync() ?? await file.length() ?? bytes.length;
-        if (size > 25 * 1024 * 1024) {
+        if (size > 50 * 1024 * 1024) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('File exceeds maximum size limit of 25 MB.'),
+                content: Text('File exceeds maximum size limit of 50 MB.'),
                 backgroundColor: AppColors.error,
               ),
             );
@@ -106,8 +120,13 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
           _pickedFile = file;
           _pickedFileBytes = bytes;
           _pickedFileSize = size;
-          if (_titleController.text.isEmpty) {
-            _titleController.text = file.name;
+
+          // If title is empty, auto-populate from file name without extension
+          if (_titleController.text.trim().isEmpty) {
+            final nameWithoutExt = file.name.contains('.')
+                ? file.name.substring(0, file.name.lastIndexOf('.'))
+                : file.name;
+            _titleController.text = nameWithoutExt;
           }
 
           final ext = file.extension?.toLowerCase() ?? '';
@@ -130,6 +149,15 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
     }
   }
 
+  void _applyPreset(String preset) {
+    setState(() {
+      _titleController.text = preset;
+      if (preset == 'Personal Photo') {
+        _selectedCategory = VaultCategory.photos;
+      }
+    });
+  }
+
   Future<void> _saveDocument() async {
     if (_isSaving) return;
     if (!_formKey.currentState!.validate()) return;
@@ -138,7 +166,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
     if (!isEditing && _pickedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a file to encrypt and store.'),
+          content: Text('Please tap above to choose a file from your device.'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -174,7 +202,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isEditing ? 'Document updated successfully' : 'Document encrypted and saved'),
+          content: Text(isEditing ? 'Document updated successfully' : '$title encrypted & saved to vault!'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -248,6 +276,48 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Quick Presets
+                if (!isEditing) ...[
+                  const Text(
+                    'Quick Presets (1-Tap Title)',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      color: AppColors.textMutedNavy,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: Row(
+                      children: _quickDocPresets.map((preset) {
+                        final isSelected = _titleController.text.trim().toLowerCase() == preset.toLowerCase();
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: ActionChip(
+                            label: Text(preset),
+                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                              fontSize: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              side: BorderSide(
+                                color: isSelected ? AppColors.primary : AppColors.border,
+                              ),
+                            ),
+                            onPressed: () => _applyPreset(preset),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                ],
+
                 // File Picker Box
                 Card(
                   elevation: 0,
@@ -380,7 +450,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   const Text(
-                                    'Supports PDF, JPG, PNG, WEBP, TXT (Max 25 MB)',
+                                    'Supports PDF, Word, Excel, ZIP, APK, Images (Max 50 MB)',
                                     style: TextStyle(
                                       color: AppColors.textMutedNavy,
                                       fontSize: 12,
@@ -416,7 +486,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                           size: 18,
                           color: _selectedCategory == VaultCategory.documents ? Colors.white : AppColors.categoryDocuments,
                         ),
-                        label: const Center(child: Text('Documents')),
+                        label: const Center(child: Text('Documents / Files')),
                         selected: _selectedCategory == VaultCategory.documents,
                         selectedColor: AppColors.primary,
                         backgroundColor: Colors.white,
@@ -437,7 +507,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                           size: 18,
                           color: _selectedCategory == VaultCategory.photos ? Colors.white : AppColors.categoryPhotos,
                         ),
-                        label: const Center(child: Text('Photos')),
+                        label: const Center(child: Text('Photos / Media')),
                         selected: _selectedCategory == VaultCategory.photos,
                         selectedColor: AppColors.primary,
                         backgroundColor: Colors.white,
@@ -468,7 +538,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                   controller: _titleController,
                   validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a title' : null,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Passport scan, Property deed, Tax return',
+                    hintText: 'e.g. Passport scan, Property deed, Resume',
                     prefixIcon: const Icon(Icons.title_rounded, color: AppColors.textMutedNavy),
                     fillColor: Colors.white,
                     filled: true,
@@ -489,7 +559,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                 const SizedBox(height: 6),
                 TextFormField(
                   controller: _notesController,
-                  maxLines: 3,
+                  maxLines: 2,
                   decoration: InputDecoration(
                     hintText: 'Additional details or context about this document...',
                     fillColor: Colors.white,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../../core/security/password_generator.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../data/vault_item_model.dart';
 import '../widgets/password_generator_sheet.dart';
@@ -21,7 +22,7 @@ class AddItemScreen extends ConsumerStatefulWidget {
 
 class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   final _nameController = TextEditingController();
-  final _urlController = TextEditingController(text: 'https://');
+  final _urlController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _notesController = TextEditingController();
@@ -30,8 +31,48 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   bool _isSaving = false;
   bool _obscurePassword = true;
   bool _isFavourite = false;
-  String _selectedCategory = 'Website';
-  VaultCategory _mainCategory = VaultCategory.passwords;
+  String _selectedCategory = 'Social';
+  PasswordStrength _strength = PasswordStrength.weak;
+
+  static const List<Map<String, String>> _popularApps = [
+    {'name': 'Instagram', 'cat': 'Social', 'url': 'https://instagram.com'},
+    {'name': 'Gmail / Google', 'cat': 'Email', 'url': 'https://google.com'},
+    {'name': 'Facebook', 'cat': 'Social', 'url': 'https://facebook.com'},
+    {'name': 'X (Twitter)', 'cat': 'Social', 'url': 'https://x.com'},
+    {'name': 'LinkedIn', 'cat': 'Work', 'url': 'https://linkedin.com'},
+    {'name': 'Telegram', 'cat': 'Social', 'url': 'https://telegram.org'},
+    {'name': 'Discord', 'cat': 'Social', 'url': 'https://discord.com'},
+    {'name': 'GitHub', 'cat': 'Work', 'url': 'https://github.com'},
+    {'name': 'Amazon', 'cat': 'Shopping', 'url': 'https://amazon.in'},
+    {'name': 'Flipkart', 'cat': 'Shopping', 'url': 'https://flipkart.com'},
+    {'name': 'Net Banking', 'cat': 'Finance', 'url': ''},
+    {'name': 'Company Creds', 'cat': 'Work', 'url': ''},
+  ];
+
+  static const List<String> _categories = [
+    'Social',
+    'Email',
+    'Apps',
+    'Finance',
+    'Work',
+    'Shopping',
+    'Personal',
+    'Other',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordController.addListener(_onPasswordChanged);
+  }
+
+  void _onPasswordChanged() {
+    final text = _passwordController.text;
+    final newStrength = PasswordGenerator.calculateStrength(text);
+    if (_strength != newStrength) {
+      setState(() => _strength = newStrength);
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -50,19 +91,20 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
       );
       if (item.id.isNotEmpty) {
         _nameController.text = item.title;
-        _urlController.text = (item.url != null && item.url!.isNotEmpty) ? item.url! : 'https://';
+        _urlController.text = item.url ?? '';
         _usernameController.text = item.username ?? '';
         _passwordController.text = item.password ?? '';
         _notesController.text = item.details ?? '';
-        _selectedCategory = item.subcategory ?? 'Website';
-        _mainCategory = item.category;
+        _selectedCategory = _categories.contains(item.subcategory) ? item.subcategory! : 'Social';
         _isFavourite = item.isFavourite;
+        _strength = PasswordGenerator.calculateStrength(item.password ?? '');
       }
     }
   }
 
   @override
   void dispose() {
+    _passwordController.removeListener(_onPasswordChanged);
     _nameController.dispose();
     _urlController.dispose();
     _usernameController.dispose();
@@ -71,12 +113,25 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     super.dispose();
   }
 
+  void _applyQuickApp(Map<String, String> app) {
+    setState(() {
+      _nameController.text = app['name']!;
+      if (_categories.contains(app['cat'])) {
+        _selectedCategory = app['cat']!;
+      }
+      if (_urlController.text.trim().isEmpty && (app['url']?.isNotEmpty ?? false)) {
+        _urlController.text = app['url']!;
+      }
+    });
+  }
+
   Future<void> _generateStrongPassword() async {
     final generated = await PasswordGeneratorSheet.show(context);
     if (generated != null && generated.isNotEmpty) {
       setState(() {
         _passwordController.text = generated;
         _obscurePassword = false;
+        _strength = PasswordGenerator.calculateStrength(generated);
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -96,13 +151,13 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     final title = _nameController.text.trim();
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter an Item / App Name')),
+        const SnackBar(content: Text('Please enter an App / Website Name (e.g. Instagram)')),
       );
       return;
     }
 
     final password = _passwordController.text;
-    if (password.isEmpty && _mainCategory == VaultCategory.passwords) {
+    if (password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter or generate a password')),
       );
@@ -112,38 +167,22 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     setState(() => _isSaving = true);
 
     try {
-      if (_mainCategory == VaultCategory.passwords) {
-        await ref.read(vaultItemsProvider.notifier).savePasswordItem(
-              id: widget.itemId,
-              title: title,
-              websiteUrl: _urlController.text.trim(),
-              username: _usernameController.text.trim(),
-              password: password,
-              subcategory: _selectedCategory,
-              notes: _notesController.text.trim(),
-              isFavourite: _isFavourite,
-            );
-      } else {
-        final newItem = VaultItem(
-          id: widget.itemId ?? 'custom_${DateTime.now().millisecondsSinceEpoch}',
-          title: title,
-          subtitle: _usernameController.text.isNotEmpty ? _usernameController.text : _selectedCategory,
-          category: _mainCategory,
-          url: _urlController.text,
-          username: _usernameController.text,
-          password: _passwordController.text,
-          details: _notesController.text,
-          subcategory: _selectedCategory,
-          isFavourite: _isFavourite,
-          date: 'Just now',
-        );
-        await ref.read(vaultItemsProvider.notifier).addItem(newItem);
-      }
+      final finalUrl = _urlController.text.trim();
+      await ref.read(vaultItemsProvider.notifier).savePasswordItem(
+            id: widget.itemId,
+            title: title,
+            websiteUrl: finalUrl.isNotEmpty ? finalUrl : null,
+            username: _usernameController.text.trim(),
+            password: password,
+            subcategory: _selectedCategory,
+            notes: _notesController.text.trim().isNotEmpty ? _notesController.text.trim() : null,
+            isFavourite: _isFavourite,
+          );
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.itemId != null ? '$title updated successfully!' : '$title added to your vault!'),
+            content: Text(widget.itemId != null ? '$title updated successfully!' : '$title saved to vault!'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -168,9 +207,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
-    final screenTitle = isEditing
-        ? 'Edit Password'
-        : (_mainCategory == VaultCategory.passwords ? 'Add Password' : 'Add Item');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -180,7 +216,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          screenTitle,
+          isEditing ? 'Edit Password' : 'Save Password',
           style: const TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
@@ -212,69 +248,104 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           children: [
-            // Category selector (hidden in editing to preserve item type)
+            // Quick 1-Tap App Suggestions (Shown on add new)
             if (!isEditing) ...[
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.border),
+              const Text(
+                'Quick Presets (1-Tap Fill)',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                  color: AppColors.textMutedNavy,
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<VaultCategory>(
-                    value: _mainCategory,
-                    isExpanded: true,
-                    icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
-                    items: VaultCategory.values.map((c) {
-                      return DropdownMenuItem(
-                        value: c,
-                        child: Text('Category: ${c.displayName}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      if (val != null) setState(() => _mainCategory = val);
-                    },
-                  ),
+              ),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                child: Row(
+                  children: _popularApps.map((app) {
+                    final isSelected = _nameController.text.trim().toLowerCase() == app['name']!.toLowerCase();
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8.0),
+                      child: ActionChip(
+                        label: Text(app['name']!),
+                        backgroundColor: isSelected ? AppColors.primary : Colors.white,
+                        labelStyle: TextStyle(
+                          color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          fontSize: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          side: BorderSide(
+                            color: isSelected ? AppColors.primary : AppColors.border,
+                          ),
+                        ),
+                        onPressed: () => _applyQuickApp(app),
+                      ),
+                    );
+                  }).toList(),
                 ),
               ),
               const SizedBox(height: AppSpacing.md),
             ],
-            // Item Name
-            const Text('Website / App Name *', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
+
+            // 1. Title / App Name
+            const Text(
+              'App / Website Name *',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _nameController,
               decoration: const InputDecoration(
-                hintText: 'e.g. Google',
-                prefixIcon: Icon(Icons.language_rounded, color: AppColors.textMutedNavy),
+                hintText: 'e.g. Instagram, Gmail, Facebook',
+                prefixIcon: Icon(Icons.apps_rounded, color: AppColors.primary),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Website URL
-            const Text('Website URL', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _urlController,
-              decoration: const InputDecoration(
-                hintText: 'https://',
-                prefixIcon: Icon(Icons.link_rounded, color: AppColors.textMutedNavy),
-              ),
+
+            // 2. User ID / Username / Email
+            const Text(
+              'User ID / Username / Email',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
             ),
-            const SizedBox(height: AppSpacing.md),
-            // Username / Email
-            const Text('Username / Email', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
             const SizedBox(height: 6),
             TextField(
               controller: _usernameController,
               decoration: const InputDecoration(
-                hintText: 'Enter username or email',
+                hintText: 'e.g. @yourhandle or user@gmail.com',
                 prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.textMutedNavy),
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Password
-            const Text('Password *', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
+
+            // 3. Password
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Password *',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+                ),
+                if (_passwordController.text.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _strength.color.withAlpha(40),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _strength.label,
+                      style: TextStyle(
+                        color: _strength.color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _passwordController,
@@ -283,12 +354,31 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
                 hintText: 'Enter password',
                 prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
                 suffixIcon: IconButton(
-                  icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                    color: AppColors.textMutedNavy,
+                  ),
                   onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                 ),
               ),
             ),
+
+            // Strength bar
+            if (_passwordController.text.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _strength.score,
+                  backgroundColor: AppColors.border,
+                  valueColor: AlwaysStoppedAnimation<Color>(_strength.color),
+                  minHeight: 4,
+                ),
+              ),
+            ],
+
             const SizedBox(height: AppSpacing.sm),
+
             // Generate Strong Password button
             InkWell(
               onTap: _generateStrongPassword,
@@ -302,7 +392,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
                 ),
                 child: const Row(
                   children: [
-                    Icon(Icons.shield_outlined, color: AppColors.primary, size: 20),
+                    Icon(Icons.auto_fix_high_rounded, color: AppColors.primary, size: 20),
                     SizedBox(width: 10),
                     Text(
                       'Generate Strong Password',
@@ -319,8 +409,28 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Subcategory Dropdown
-            const Text('Category', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
+
+            // 4. Website URL (Optional)
+            const Text(
+              'Website URL (Optional)',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _urlController,
+              keyboardType: TextInputType.url,
+              decoration: const InputDecoration(
+                hintText: 'e.g. instagram.com (optional)',
+                prefixIcon: Icon(Icons.link_rounded, color: AppColors.textMutedNavy),
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+
+            // 5. Category selector
+            const Text(
+              'Category',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+            ),
             const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -333,7 +443,8 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
                 child: DropdownButton<String>(
                   value: _selectedCategory,
                   isExpanded: true,
-                  items: ['Website', 'Apps', 'Finance', 'Government', 'Personal', 'Other']
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
+                  items: _categories
                       .map((val) => DropdownMenuItem(value: val, child: Text(val)))
                       .toList(),
                   onChanged: (val) {
@@ -343,19 +454,29 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Notes
-            const Text('Notes (Optional)', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy)),
+
+            // 6. Notes (Optional)
+            const Text(
+              'Notes (Optional)',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
+            ),
             const SizedBox(height: 6),
             TextField(
               controller: _notesController,
-              maxLines: 3,
+              maxLines: 2,
               decoration: const InputDecoration(
-                hintText: 'Add any notes...',
+                hintText: 'Security question hints, recovery notes, etc.',
               ),
             ),
             const SizedBox(height: AppSpacing.md),
-            // Mark as Favourite Switch Card
+
+            // Mark as Favourite
             Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: AppColors.border),
+              ),
               child: SwitchListTile(
                 title: const Text(
                   'Mark as Favourite',
