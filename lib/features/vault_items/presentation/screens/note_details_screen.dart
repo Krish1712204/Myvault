@@ -30,7 +30,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
-          'Are you sure you want to permanently delete "${item.title}" from your encrypted vault? This action cannot be undone.',
+          'Are you sure you want to permanently delete "${item.title}" from your vault? This action cannot be undone.',
           style: const TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
@@ -404,8 +404,8 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                     ),
                     const Divider(height: 16, color: AppColors.border),
                     _buildMetaRow(
-                      label: 'Encryption',
-                      value: 'SQLCipher AES-256 (Local App-Private)',
+                      label: 'Protection',
+                      value: 'Secured on device (Offline)',
                     ),
                   ],
                 ),

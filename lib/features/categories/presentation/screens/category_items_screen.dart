@@ -65,21 +65,66 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final category = VaultCategory.fromKey(widget.categoryKey);
-    final items = ref.watch(itemsByCategoryProvider(category));
+    final isFavouritesCategory = widget.categoryKey.toLowerCase().contains('favor');
+    final category = isFavouritesCategory
+        ? VaultCategory.passwords
+        : VaultCategory.fromKey(widget.categoryKey);
+
+    final List<VaultItem> items = isFavouritesCategory
+        ? ref.watch(favouriteItemsProvider)
+        : ref.watch(itemsByCategoryProvider(category));
     final query = _searchController.text.trim().toLowerCase();
 
-    final subcategories = _getSubcategoriesFor(category);
+    final subcategories = isFavouritesCategory
+        ? ['All', 'Passwords', 'Documents', 'Photos', 'Cards', 'Notes', 'Contacts']
+        : _getSubcategoriesFor(category);
 
     final filteredItems = items.where((item) {
       if (_selectedSubcategory != 'All') {
-        final itemSub = item.subcategory?.toLowerCase() ?? '';
         final selSub = _selectedSubcategory.toLowerCase();
-        final matchesSub = itemSub == selSub ||
-            (selSub == 'websites' && itemSub == 'website') ||
-            (selSub == 'website' && itemSub == 'websites') ||
-            (selSub == 'apps' && itemSub == 'app');
-        if (!matchesSub) return false;
+        final itemSub = item.subcategory?.toLowerCase() ?? '';
+        final ext = item.fileExtension?.toLowerCase() ?? '';
+        final fileName = item.fileName?.toLowerCase() ?? '';
+        final mime = item.mimeType?.toLowerCase() ?? '';
+
+        if (selSub == 'pdf') {
+          final isPdf = ext == '.pdf' ||
+              fileName.endsWith('.pdf') ||
+              mime.contains('pdf') ||
+              item.title.toLowerCase().contains('.pdf') ||
+              item.title.toLowerCase().contains('pdf');
+          if (!isPdf) return false;
+        } else if (selSub == 'images' || selSub == 'photos') {
+          final isImg = ext == '.jpg' ||
+              ext == '.jpeg' ||
+              ext == '.png' ||
+              ext == '.webp' ||
+              ext == '.gif' ||
+              mime.startsWith('image/') ||
+              item.category == VaultCategory.photos ||
+              fileName.endsWith('.jpg') ||
+              fileName.endsWith('.png');
+          if (!isImg) return false;
+        } else if (selSub == 'others' || selSub == 'other') {
+          final isPdf = ext == '.pdf' || fileName.endsWith('.pdf') || mime.contains('pdf');
+          final isImg = ext == '.jpg' ||
+              ext == '.jpeg' ||
+              ext == '.png' ||
+              ext == '.webp' ||
+              mime.startsWith('image/');
+          if (isPdf || isImg) return false;
+        } else if (isFavouritesCategory) {
+          final catName = item.category.displayName.toLowerCase();
+          if (!catName.contains(selSub) && !selSub.contains(catName)) return false;
+        } else {
+          final matchesSub = itemSub == selSub ||
+              (selSub == 'websites' && itemSub == 'website') ||
+              (selSub == 'website' && itemSub == 'websites') ||
+              (selSub == 'apps' && itemSub == 'app') ||
+              (item.tags?.toLowerCase().contains(selSub) ?? false) ||
+              fileName.toLowerCase().contains(selSub);
+          if (!matchesSub) return false;
+        }
       }
       if (query.isEmpty) return true;
       return item.title.toLowerCase().contains(query) ||
@@ -106,7 +151,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              category.displayName,
+              isFavouritesCategory ? 'Favourites' : category.displayName,
               style: const TextStyle(
                 color: AppColors.textPrimaryNavy,
                 fontSize: 18,
@@ -114,7 +159,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
               ),
             ),
             Text(
-              '${items.length} items',
+              '${filteredItems.length} items',
               style: const TextStyle(
                 color: AppColors.textMutedNavy,
                 fontSize: 12,
@@ -123,24 +168,25 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
-            onPressed: () {
-              if (category == VaultCategory.passwords) {
-                context.push('/add-item');
-              } else if (category == VaultCategory.idCards) {
-                context.push('/add-id');
-              } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
-                context.push('/add-document');
-              } else if (category == VaultCategory.notes) {
-                context.push('/add-note');
-              } else if (category == VaultCategory.contacts) {
-                context.push('/add-contact');
-              } else {
-                context.push('/add-item');
-              }
-            },
-          ),
+          if (!isFavouritesCategory)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
+              onPressed: () {
+                if (category == VaultCategory.passwords) {
+                  context.push('/add-item');
+                } else if (category == VaultCategory.idCards) {
+                  context.push('/add-id');
+                } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
+                  context.push('/add-document');
+                } else if (category == VaultCategory.notes) {
+                  context.push('/add-note');
+                } else if (category == VaultCategory.contacts) {
+                  context.push('/add-contact');
+                } else {
+                  context.push('/add-item');
+                }
+              },
+            ),
           const SizedBox(width: 8),
         ],
       ),
@@ -506,7 +552,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       case VaultCategory.documents:
         return ['All', 'PDF', 'Images', 'Others'];
       case VaultCategory.photos:
-        return ['All', 'Camera', 'Screenshots', 'Saved'];
+        return ['All', 'Images', 'Camera', 'Screenshots', 'Saved'];
       case VaultCategory.notes:
         return ['All', 'Personal', 'Work', 'Ideas', 'Finance', 'Other'];
       case VaultCategory.contacts:

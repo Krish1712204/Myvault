@@ -93,7 +93,7 @@ class HeroStatsCard extends StatelessWidget {
                   icon: Icons.star_rounded,
                   value: '$favouriteItems',
                   label: 'Favourites',
-                  onTap: () => context.push('/category/passwords'),
+                  onTap: () => context.push('/category/favourites'),
                 ),
               ),
             ],

@@ -128,7 +128,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                           Icon(Icons.shield_outlined, color: AppColors.primary, size: 26),
                           SizedBox(width: 10),
                           Text(
-                            'Create Encrypted Backup',
+                            'Create Vault Backup',
                             style: TextStyle(
                               color: AppColors.textPrimaryNavy,
                               fontSize: 18,
@@ -158,8 +158,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                             SizedBox(height: 4),
                             Text(
                               '• This backup passphrase is separate from your vault master password.\n'
-                              '• The backup is encrypted using AES-256-GCM and Argon2id.\n'
-                              '• If you lose this passphrase, this backup file cannot be decrypted or recovered.',
+                              '• The backup is secured with high-grade security.\n'
+                              '• If you lose this passphrase, this backup file cannot be restored.',
                               style: TextStyle(
                                 color: AppColors.textPrimaryNavy,
                                 fontSize: 12,
@@ -306,7 +306,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
 
       // Prompt user to save file via Storage Access Framework / FilePicker
       final savedUri = await FilePicker.saveFile(
-        dialogTitle: 'Save MyVault Encrypted Backup',
+        dialogTitle: 'Save MyVault Backup',
         fileName: fileName,
         bytes: backupBytes,
         mimeType: 'application/octet-stream',
@@ -329,7 +329,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Encrypted backup saved successfully ($fileName)!'),
+          content: Text('Backup saved successfully ($fileName)!'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -828,7 +828,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Create an encrypted backup of your\nvault and restore it anytime.',
+                          'Create a secure backup of your\nvault and restore it anytime.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: AppColors.textMutedNavy,
@@ -852,8 +852,8 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                       children: [
                         ListTile(
                           leading: const Icon(Icons.cloud_upload_outlined, color: AppColors.primary),
-                          title: const Text('Create Encrypted Backup', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                          subtitle: const Text('Export all vault items and encrypted attachments to a portable .myvault file.', style: TextStyle(fontSize: 12)),
+                          title: const Text('Create Vault Backup', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          subtitle: const Text('Export all vault items and attachments to a portable .myvault file.', style: TextStyle(fontSize: 12)),
                           trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMutedNavy),
                           onTap: _showCreateBackupDialog,
                         ),
@@ -912,7 +912,7 @@ class _BackupRestoreScreenState extends ConsumerState<BackupRestoreScreen> {
                         ),
                         SizedBox(height: 8),
                         Text(
-                          'Backups use AES-256-GCM authenticated encryption derived from your backup passphrase with Argon2id. '
+                          'Backups are protected with high-grade security derived from your backup passphrase. '
                           'Device-specific Keystore keys and master passwords are never included, allowing safe transfer to another device.',
                           style: TextStyle(
                             color: AppColors.textMutedNavy,

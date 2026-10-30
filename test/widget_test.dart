@@ -130,7 +130,7 @@ void main() {
     // Tap Settings tab in bottom bar
     await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
-    expect(find.text('Account & Security'), findsOneWidget);
-    expect(find.text('Biometric Unlock'), findsOneWidget);
+    expect(find.text('Security & Protection'), findsOneWidget);
+    expect(find.text('Fingerprint Biometrics'), findsOneWidget);
   });
 }

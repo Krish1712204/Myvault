@@ -73,7 +73,6 @@ class VaultAuthNotifier extends StateNotifier<VaultAuthState> {
     state = state.copyWith(isLoading: true);
 
     try {
-      await ClipboardService.clearClipboard();
       await _fileService?.clearTemporaryPreviews();
       final hasVault = await _storageService.hasVault();
       final canBiometrics = await _biometricService.canAuthenticate();

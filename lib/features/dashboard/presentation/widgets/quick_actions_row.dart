@@ -97,7 +97,7 @@ class QuickActionsRow extends StatelessWidget {
                   child: const Icon(Icons.file_present_rounded, color: AppColors.categoryDocuments),
                 ),
                 title: const Text('Document or File', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Encrypted PDF, Word, Excel, ZIP, APK, Photo, or File'),
+                subtitle: const Text('PDF, Word, Excel, ZIP, Photo, or File'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-document');
@@ -129,7 +129,7 @@ class QuickActionsRow extends StatelessWidget {
                   child: const Icon(Icons.person_rounded, color: AppColors.categoryContacts),
                 ),
                 title: const Text('Contact', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Private encrypted contact with phone and email'),
+                subtitle: const Text('Private contact with phone and email'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-contact');

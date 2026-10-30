@@ -33,7 +33,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
-          'Are you sure you want to permanently delete "${item.title}" and any encrypted attachments from your vault? This action cannot be undone.',
+          'Are you sure you want to permanently delete "${item.title}" and any attachments from your vault? This action cannot be undone.',
           style: const TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
@@ -127,7 +127,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                           Icon(Icons.insert_drive_file_outlined, size: 48, color: AppColors.primary),
                           SizedBox(height: 12),
                           Text(
-                            'Decrypted document attachment (Non-image file)',
+                            'Document attachment (Non-image file)',
                             style: TextStyle(color: AppColors.textPrimaryNavy),
                             textAlign: TextAlign.center,
                           ),
@@ -146,7 +146,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       setState(() => _isLoadingAttachment = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to decrypt attachment: $e'),
+          content: Text('Failed to open attachment: $e'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -481,7 +481,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Encrypted Attachment',
+                                'Attachment',
                                 style: TextStyle(
                                   color: AppColors.textPrimaryNavy,
                                   fontWeight: FontWeight.bold,

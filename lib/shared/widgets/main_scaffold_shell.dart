@@ -94,7 +94,7 @@ class MainScaffoldShell extends StatelessWidget {
                   child: const Icon(Icons.file_present_rounded, color: AppColors.categoryDocuments),
                 ),
                 title: const Text('Document or Photo', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Encrypted PDF, JPG, PNG, WEBP, or TXT file'),
+                subtitle: const Text('PDF, JPG, PNG, WEBP, or document file'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-document');
@@ -126,7 +126,7 @@ class MainScaffoldShell extends StatelessWidget {
                   child: const Icon(Icons.person_rounded, color: AppColors.categoryContacts),
                 ),
                 title: const Text('Contact', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Private encrypted contact with phone and email'),
+                subtitle: const Text('Private contact with phone and email'),
                 onTap: () {
                   Navigator.pop(ctx);
                   context.push('/add-contact');
@@ -145,29 +145,53 @@ class MainScaffoldShell extends StatelessWidget {
 
     return Scaffold(
       body: navigationShell,
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddItemSheet(context),
-        backgroundColor: AppColors.primary,
-        elevation: 4,
-        shape: const CircleBorder(),
-        child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
+      floatingActionButton: Container(
+        height: 56,
+        width: 56,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2979FF), Color(0xFF1565C0)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2979FF).withAlpha(100),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showAddItemSheet(context),
+            customBorder: const CircleBorder(),
+            child: const Center(
+              child: Icon(Icons.add_rounded, color: Colors.white, size: 30),
+            ),
+          ),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8.0,
         color: Colors.white,
-        elevation: 8,
+        elevation: 12,
+        shadowColor: Colors.black26,
         surfaceTintColor: Colors.transparent,
-        padding: EdgeInsets.zero,
-        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        height: 68,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             // Home (index 0)
             _buildNavItem(
               index: 0,
-              icon: Icons.home_rounded,
+              icon: Icons.home_outlined,
+              activeIcon: Icons.home_rounded,
               label: 'Home',
               isSelected: currentIndex == 0,
             ),
@@ -175,6 +199,7 @@ class MainScaffoldShell extends StatelessWidget {
             _buildNavItem(
               index: 1,
               icon: Icons.search_rounded,
+              activeIcon: Icons.search_rounded,
               label: 'Search',
               isSelected: currentIndex == 1,
             ),
@@ -183,7 +208,8 @@ class MainScaffoldShell extends StatelessWidget {
             // Categories (index 2)
             _buildNavItem(
               index: 2,
-              icon: Icons.grid_view_rounded,
+              icon: Icons.grid_view_outlined,
+              activeIcon: Icons.grid_view_rounded,
               label: 'Categories',
               isSelected: currentIndex == 2,
             ),
@@ -191,6 +217,7 @@ class MainScaffoldShell extends StatelessWidget {
             _buildNavItem(
               index: 3,
               icon: Icons.settings_outlined,
+              activeIcon: Icons.settings_rounded,
               label: 'Settings',
               isSelected: currentIndex == 3,
             ),
@@ -203,28 +230,34 @@ class MainScaffoldShell extends StatelessWidget {
   Widget _buildNavItem({
     required int index,
     required IconData icon,
+    required IconData activeIcon,
     required String label,
     required bool isSelected,
   }) {
     return InkWell(
       onTap: () => _onTap(index),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      borderRadius: BorderRadius.circular(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primaryLight : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon,
+              isSelected ? activeIcon : icon,
               size: 22,
               color: isSelected ? AppColors.primary : AppColors.textMutedNavy,
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected ? AppColors.primary : AppColors.textMutedNavy,
               ),
             ),

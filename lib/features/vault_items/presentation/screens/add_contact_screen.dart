@@ -204,6 +204,14 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
+            ),
+            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
+            onPressed: () => setState(() => _isFavourite = !_isFavourite),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: TextButton(
@@ -584,41 +592,6 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                     fillColor: Colors.white,
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Mark as Favorite Switch
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.star_rounded, color: Colors.amber, size: 22),
-                          SizedBox(width: 10),
-                          Text(
-                            'Mark as Favourite',
-                            style: TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Switch(
-                        value: _isFavourite,
-                        activeThumbColor: AppColors.primary,
-                        onChanged: (val) => setState(() => _isFavourite = val),
-                      ),
-                    ],
-                  ),
-                ),
-
                 const SizedBox(height: AppSpacing.lg),
 
                 // Security Note
@@ -634,7 +607,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Contacts are stored locally in SQLCipher AES-256 encrypted database. Zero external syncing.',
+                          'Contacts are stored securely and privately on this device only. Zero external syncing.',
                           style: TextStyle(
                             color: AppColors.textPrimaryNavy,
                             fontSize: 12,
@@ -644,6 +617,7 @@ class _AddContactScreenState extends ConsumerState<AddContactScreen> {
                     ],
                   ),
                 ),
+                const SizedBox(height: AppSpacing.xl),
               ],
             ),
           ),

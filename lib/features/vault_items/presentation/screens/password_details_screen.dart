@@ -33,7 +33,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
-          'Are you sure you want to permanently delete "${item.title}" from your encrypted vault? This action cannot be undone.',
+          'Are you sure you want to permanently delete "${item.title}" from your vault? This action cannot be undone.',
           style: const TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [

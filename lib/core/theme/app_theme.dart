@@ -140,4 +140,75 @@ class AppTheme {
       ),
     );
   }
+
+  static ThemeData get darkTheme {
+    const darkBg = Color(0xFF0F172A);
+    const darkSurface = Color(0xFF1E293B);
+    const darkCard = Color(0xFF1E293B);
+    const darkBorder = Color(0xFF334155);
+    const darkTextPrimary = Color(0xFFF8FAFC);
+    const darkTextMuted = Color(0xFF94A3B8);
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: AppColors.primary,
+        brightness: Brightness.dark,
+        primary: const Color(0xFF3B82F6),
+        onPrimary: Colors.white,
+        surface: darkSurface,
+        onSurface: darkTextPrimary,
+      ),
+      scaffoldBackgroundColor: darkBg,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: darkSurface,
+        foregroundColor: darkTextPrimary,
+        elevation: 0,
+        centerTitle: false,
+        titleTextStyle: TextStyle(
+          color: darkTextPrimary,
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          letterSpacing: -0.3,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: darkCard,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16.0),
+          side: const BorderSide(
+            color: darkBorder,
+            width: 1.0,
+          ),
+        ),
+        margin: EdgeInsets.zero,
+      ),
+      textTheme: const TextTheme(
+        headlineLarge: TextStyle(color: darkTextPrimary, fontSize: 30, fontWeight: FontWeight.bold),
+        headlineMedium: TextStyle(color: darkTextPrimary, fontSize: 24, fontWeight: FontWeight.w700),
+        titleLarge: TextStyle(color: darkTextPrimary, fontSize: 18, fontWeight: FontWeight.w700),
+        titleMedium: TextStyle(color: darkTextPrimary, fontSize: 16, fontWeight: FontWeight.w600),
+        bodyLarge: TextStyle(color: darkTextPrimary, fontSize: 15),
+        bodyMedium: TextStyle(color: darkTextMuted, fontSize: 13),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: darkSurface,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14.0),
+          borderSide: const BorderSide(color: darkBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14.0),
+          borderSide: const BorderSide(color: darkBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14.0),
+          borderSide: const BorderSide(color: Color(0xFF3B82F6), width: 2),
+        ),
+      ),
+    );
+  }
 }

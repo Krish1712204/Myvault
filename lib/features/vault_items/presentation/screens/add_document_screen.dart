@@ -26,7 +26,6 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _titleController = TextEditingController();
-  final _notesController = TextEditingController();
 
   late VaultCategory _selectedCategory;
   bool _isFavourite = false;
@@ -38,21 +37,6 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   int _pickedFileSize = 0;
   String? _existingFileName;
   int? _existingFileSize;
-
-  static const List<String> _quickDocPresets = [
-    'Resume',
-    'Degree / Certificate',
-    'Tax Document',
-    'Insurance Policy',
-    'Medical Report',
-    'Offer Letter',
-    'Payslip',
-    'Aadhaar Scan',
-    'PAN Scan',
-    'Passport Scan',
-    'Driving License',
-    'Personal Photo',
-  ];
 
   @override
   void initState() {
@@ -78,7 +62,6 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
 
       if (item.id.isNotEmpty) {
         _titleController.text = item.title;
-        _notesController.text = item.details ?? '';
         _selectedCategory = item.category;
         _isFavourite = item.isFavourite;
         _existingFileName = item.fileName ?? item.title;
@@ -90,7 +73,6 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   @override
   void dispose() {
     _titleController.dispose();
-    _notesController.dispose();
     super.dispose();
   }
 
@@ -149,13 +131,73 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
     }
   }
 
-  void _applyPreset(String preset) {
-    setState(() {
-      _titleController.text = preset;
-      if (preset == 'Personal Photo') {
-        _selectedCategory = VaultCategory.photos;
-      }
-    });
+  void _openPreviewBeforeSave() {
+    if (_pickedFileBytes == null) return;
+    final ext = _pickedFile?.extension?.toLowerCase() ?? '';
+    final isImage = ext == 'jpg' || ext == 'jpeg' || ext == 'png' || ext == 'webp';
+
+    if (isImage) {
+      showDialog(
+        context: context,
+        builder: (ctx) => Dialog(
+          backgroundColor: Colors.transparent,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: InteractiveViewer(
+                  maxScale: 4.0,
+                  child: Image.memory(_pickedFileBytes!),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(_pickedFile?.name ?? 'File Preview'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                ext == 'pdf' ? Icons.picture_as_pdf_rounded : Icons.insert_drive_file_rounded,
+                size: 48,
+                color: ext == 'pdf' ? Colors.red : AppColors.primary,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Size: ${_formatFileSize(_pickedFileSize)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'File is verified and ready to be securely stored.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Future<void> _saveDocument() async {
@@ -166,7 +208,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
     if (!isEditing && _pickedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please tap above to choose a file from your device.'),
+          content: Text('Please tap below to choose a file from your device.'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -177,7 +219,6 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
 
     try {
       final title = _titleController.text.trim();
-      final notes = _notesController.text.trim();
 
       if (_pickedFile != null && _pickedFileBytes != null) {
         await ref.read(vaultItemsProvider.notifier).saveDocumentItem(
@@ -186,7 +227,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
               category: _selectedCategory,
               originalFileName: _pickedFile!.name,
               fileBytes: _pickedFileBytes!,
-              notes: notes.isNotEmpty ? notes : null,
+              notes: null,
               isFavourite: _isFavourite,
             );
       } else if (isEditing) {
@@ -194,33 +235,36 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
               id: widget.itemId!,
               title: title,
               category: _selectedCategory,
-              notes: notes.isNotEmpty ? notes : null,
+              notes: null,
               isFavourite: _isFavourite,
             );
       }
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isEditing ? 'Document updated successfully' : '$title encrypted & saved to vault!'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-      context.pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isEditing ? 'Saved successfully' : 'Imported successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+        context.pop();
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save document: $e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save file: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   String _formatFileSize(int? bytes) {
-    if (bytes == null || bytes == 0) return '—';
+    if (bytes == null || bytes == 0) return '0 KB';
     if (bytes >= 1024 * 1024) {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
@@ -230,6 +274,8 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
+    final ext = _pickedFile?.extension?.toLowerCase() ?? '';
+    final isImage = ext == 'jpg' || ext == 'jpeg' || ext == 'png' || ext == 'webp';
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -239,7 +285,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
           onPressed: () => context.pop(),
         ),
         title: Text(
-          isEditing ? 'Edit Document' : 'Import Encrypted File',
+          isEditing ? 'Edit Item' : 'Import File',
           style: const TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
@@ -247,8 +293,18 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
           ),
         ),
         actions: [
+          // Favorite Star at the top only
+          IconButton(
+            icon: Icon(
+              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
+              size: 26,
+            ),
+            tooltip: _isFavourite ? 'Marked as Favourite' : 'Mark as Favourite',
+            onPressed: () => setState(() => _isFavourite = !_isFavourite),
+          ),
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: 12, left: 4),
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -276,49 +332,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Quick Presets
-                if (!isEditing) ...[
-                  const Text(
-                    'Quick Presets (1-Tap Title)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      color: AppColors.textMutedNavy,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: _quickDocPresets.map((preset) {
-                        final isSelected = _titleController.text.trim().toLowerCase() == preset.toLowerCase();
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: ActionChip(
-                            label: Text(preset),
-                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
-                            labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              fontSize: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: isSelected ? AppColors.primary : AppColors.border,
-                              ),
-                            ),
-                            onPressed: () => _applyPreset(preset),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
-                // File Picker Box
+                // File Picker Box & Live Preview
                 Card(
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -336,12 +350,16 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primaryLight,
+                                  color: isImage ? AppColors.categoryPhotosBg : AppColors.categoryDocumentsBg,
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.lock_rounded, color: AppColors.primary, size: 28),
+                                child: Icon(
+                                  isImage ? Icons.image_rounded : (ext == 'pdf' ? Icons.picture_as_pdf_rounded : Icons.insert_drive_file_rounded),
+                                  color: isImage ? AppColors.categoryPhotos : AppColors.primary,
+                                  size: 28,
+                                ),
                               ),
                               const SizedBox(width: 14),
                               Expanded(
@@ -360,7 +378,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      '${_formatFileSize(_pickedFileSize)} · Ready to encrypt with AES-256-GCM',
+                                      '${_formatFileSize(_pickedFileSize)} · Ready to save',
                                       style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
                                     ),
                                   ],
@@ -372,6 +390,40 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                                 onPressed: _pickFile,
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // PREVIEW OPTION BEFORE SAVE
+                          if (isImage && _pickedFileBytes != null) ...[
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                constraints: const BoxConstraints(maxHeight: 180),
+                                width: double.infinity,
+                                color: Colors.black12,
+                                child: Image.memory(
+                                  _pickedFileBytes!,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+
+                          // Interactive Preview Button
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed: _openPreviewBeforeSave,
+                              icon: const Icon(Icons.visibility_rounded, size: 18),
+                              label: const Text('Preview File Before Saving'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.primary),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ),
                           ),
                         ] else if (isEditing && _existingFileName != null) ...[
                           Row(
@@ -401,7 +453,7 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      '${_formatFileSize(_existingFileSize)} · Encrypted on device',
+                                      '${_formatFileSize(_existingFileSize)} · Saved on device',
                                       style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
                                     ),
                                   ],
@@ -538,60 +590,11 @@ class _AddDocumentScreenState extends ConsumerState<AddDocumentScreen> {
                   controller: _titleController,
                   validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a title' : null,
                   decoration: InputDecoration(
-                    hintText: 'e.g. Passport scan, Property deed, Resume',
+                    hintText: 'e.g. Passport, Tax Return, Resume, Family Photo',
                     prefixIcon: const Icon(Icons.title_rounded, color: AppColors.textMutedNavy),
                     fillColor: Colors.white,
                     filled: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Notes Field
-                const Text(
-                  'Notes (Optional)',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _notesController,
-                  maxLines: 2,
-                  decoration: InputDecoration(
-                    hintText: 'Additional details or context about this document...',
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Mark as Favourite
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text(
-                      'Mark as Favourite',
-                      style: TextStyle(
-                        color: AppColors.textPrimaryNavy,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    subtitle: const Text(
-                      'Show on dashboard favorites',
-                      style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
-                    ),
-                    value: _isFavourite,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (val) => setState(() => _isFavourite = val),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),

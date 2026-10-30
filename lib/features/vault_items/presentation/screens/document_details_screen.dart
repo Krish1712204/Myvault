@@ -68,7 +68,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
 
     if (filePath.startsWith('seed_')) {
       setState(() {
-        _previewError = 'Sample placeholder. Real uploaded documents and photos are encrypted and previewed on demand.';
+        _previewError = 'Sample placeholder. Real uploaded documents and photos are secured and previewed on demand.';
       });
       return;
     }
@@ -316,7 +316,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       final defaultFileName = item.fileName ?? '${item.title}$ext';
 
       final savedPath = await FilePicker.saveFile(
-        dialogTitle: 'Download Decrypted Document',
+        dialogTitle: 'Download Document',
         fileName: defaultFileName,
         bytes: bytes,
       );
@@ -355,7 +355,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
-          'Are you sure you want to permanently delete "${item.title}"? The encrypted file will be securely removed from app storage.',
+          'Are you sure you want to permanently delete "${item.title}"? The file will be securely removed from app storage.',
           style: const TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
@@ -419,7 +419,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             CircularProgressIndicator(color: AppColors.primary),
             SizedBox(height: 12),
             Text(
-              'Decrypting in memory...',
+              'Loading preview...',
               style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
             ),
           ],
@@ -820,16 +820,12 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                     children: [
                       _buildDetailRow('Title', item.title),
                       const Divider(height: 20),
-                      _buildDetailRow('Original File Name', item.fileName ?? item.title),
+                      _buildDetailRow('Category', item.category.displayName),
                       const Divider(height: 20),
                       _buildDetailRow('File Size', _formatFileSize(item.fileSize)),
-                      const Divider(height: 20),
-                      _buildDetailRow('MIME Type', item.mimeType ?? 'application/octet-stream'),
-                      const Divider(height: 20),
-                      _buildDetailRow('Category', item.category.displayName),
-                      if (item.details != null && item.details!.isNotEmpty) ...[
+                      if (item.category != VaultCategory.photos) ...[
                         const Divider(height: 20),
-                        _buildDetailRow('Notes', item.details!),
+                        _buildDetailRow('Format', item.fileExtension?.toUpperCase().replaceAll('.', '') ?? 'FILE'),
                       ],
                     ],
                   ),
@@ -837,56 +833,59 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
               ),
               const SizedBox(height: AppSpacing.md),
 
-              // Timestamps Card
-              Card(
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Added',
-                            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                          ),
-                          Text(
-                            createdText,
-                            style: const TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+              // Timestamps Card (Shown for Documents only, hidden for Photos as requested)
+              if (item.category != VaultCategory.photos) ...[
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: const BorderSide(color: AppColors.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Added',
+                              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Last Modified',
-                            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
-                          ),
-                          Text(
-                            updatedText,
-                            style: const TextStyle(
-                              color: AppColors.textPrimaryNavy,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                            Text(
+                              createdText,
+                              style: const TextStyle(
+                                color: AppColors.textPrimaryNavy,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Last Modified',
+                              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
+                            ),
+                            Text(
+                              updatedText,
+                              style: const TextStyle(
+                                color: AppColors.textPrimaryNavy,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.md),
+              ],
               const SizedBox(height: AppSpacing.lg),
 
               // Action Buttons: Delete & Edit

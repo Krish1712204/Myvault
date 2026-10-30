@@ -40,16 +40,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     'Other',
   ];
 
-  static const List<Map<String, String>> _quickNotePresets = [
-    {'title': 'Idea', 'cat': 'Ideas', 'hint': '💡 Idea concept:\n'},
-    {'title': '2FA Recovery Keys', 'cat': 'Recovery Codes', 'hint': 'Google / GitHub Emergency Recovery Codes:\n1. \n2. \n3. '},
-    {'title': 'Meeting Notes', 'cat': 'Work', 'hint': 'Date: \nKey takeaways:\n- '},
-    {'title': 'Shopping List', 'cat': 'Personal', 'hint': 'Items to buy:\n- '},
-    {'title': 'Diary Entry', 'cat': 'Personal', 'hint': 'Today was...'},
-    {'title': 'Password Hint', 'cat': 'Security', 'hint': 'Secret question / master password hint:\n'},
-    {'title': 'Medical Record', 'cat': 'Medical', 'hint': 'Prescription / consultation summary:\n'},
-  ];
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -83,16 +73,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     _contentController.dispose();
     _tagsController.dispose();
     super.dispose();
-  }
-
-  void _applyPreset(Map<String, String> preset) {
-    setState(() {
-      _titleController.text = preset['title']!;
-      _selectedCategory = preset['cat']!;
-      if (_contentController.text.trim().isEmpty) {
-        _contentController.text = preset['hint']!;
-      }
-    });
   }
 
   Future<void> _saveNote() async {
@@ -162,6 +142,14 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
+            ),
+            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
+            onPressed: () => setState(() => _isFavourite = !_isFavourite),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: TextButton(
@@ -197,48 +185,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Quick Presets
-                if (!isEditing) ...[
-                  const Text(
-                    'Quick Presets (1-Tap Selection)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      color: AppColors.textMutedNavy,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: _quickNotePresets.map((preset) {
-                        final isSelected = _titleController.text.trim().toLowerCase() == preset['title']!.toLowerCase();
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: ActionChip(
-                            label: Text(preset['title']!),
-                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
-                            labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              fontSize: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: isSelected ? AppColors.primary : AppColors.border,
-                              ),
-                            ),
-                            onPressed: () => _applyPreset(preset),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
                 // Title Field
                 const Text(
                   'Title *',
@@ -363,29 +309,6 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
                     }
                     return null;
                   },
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Favourite Switch Card
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text(
-                      'Mark as Favourite',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimaryNavy,
-                        fontSize: 14,
-                      ),
-                    ),
-                    value: _isFavourite,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (val) => setState(() => _isFavourite = val),
-                  ),
                 ),
                 const SizedBox(height: AppSpacing.xl),
               ],

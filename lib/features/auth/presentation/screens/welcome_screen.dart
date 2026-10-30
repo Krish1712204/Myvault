@@ -388,7 +388,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
                     Icon(Icons.shield_outlined, color: Color(0xFF2E7D32), size: 10),
                     SizedBox(width: 2.5),
                     Text(
-                      'AES-256',
+                      'Secured',
                       style: TextStyle(
                         color: Color(0xFF2E7D32),
                         fontSize: 9.0,
@@ -415,7 +415,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
             ),
           ),
           const Text(
-            'Zero-Knowledge Pass',
+            'Private & Offline',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -431,7 +431,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
           // Content Item Rows: Passwords, Documents, Cards
           _buildCardDataRow(Icons.key_rounded, const Color(0xFF2979FF), 'Passwords', 'Protected'),
           const SizedBox(height: 4.5),
-          _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Encrypted'),
+          _buildCardDataRow(Icons.insert_drive_file_rounded, const Color(0xFFE53935), 'Documents', 'Protected'),
           const SizedBox(height: 4.5),
           _buildCardDataRow(Icons.credit_card_rounded, const Color(0xFF00C853), 'Cards & IDs', 'Offline'),
 

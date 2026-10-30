@@ -65,17 +65,6 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
     'Other',
   ];
 
-  static const List<Map<String, String>> _quickPresets = [
-    {'type': 'Aadhaar Card', 'title': 'Aadhaar Card', 'cat': 'Government'},
-    {'type': 'PAN Card', 'title': 'PAN Card', 'cat': 'Government'},
-    {'type': 'Passport', 'title': 'Passport', 'cat': 'Government'},
-    {'type': 'Driving License', 'title': 'Driving License', 'cat': 'Government'},
-    {'type': 'Debit Card', 'title': 'Debit Card', 'cat': 'Finance'},
-    {'type': 'Credit Card', 'title': 'Credit Card', 'cat': 'Finance'},
-    {'type': 'UPI ID', 'title': 'UPI ID', 'cat': 'Finance'},
-    {'type': 'Voter ID', 'title': 'Voter ID', 'cat': 'Government'},
-  ];
-
   bool get _isPaymentCard => _documentType == 'Debit Card' || _documentType == 'Credit Card';
   bool get _isUpi => _documentType == 'UPI ID';
 
@@ -126,21 +115,6 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
     _expiryDateController.dispose();
     _notesController.dispose();
     super.dispose();
-  }
-
-  void _applyQuickPreset(Map<String, String> preset) {
-    setState(() {
-      _documentType = preset['type']!;
-      _titleController.text = preset['title']!;
-      _subcategory = preset['cat']!;
-      if (_isPaymentCard) {
-        if (_countryController.text == 'India') _countryController.text = '';
-      } else if (_isUpi) {
-        if (_countryController.text == 'India') _countryController.text = 'Google Pay / HDFC';
-      } else {
-        if (_countryController.text.isEmpty) _countryController.text = 'India';
-      }
-    });
   }
 
   Future<void> _pickAttachment() async {
@@ -316,6 +290,14 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
+            ),
+            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
+            onPressed: () => setState(() => _isFavourite = !_isFavourite),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton(
@@ -345,48 +327,6 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Quick 1-Tap Presets
-                if (!isEditing) ...[
-                  const Text(
-                    'Quick Presets (1-Tap Selection)',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      color: AppColors.textMutedNavy,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: _quickPresets.map((preset) {
-                        final isSelected = _documentType == preset['type'];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: ActionChip(
-                            label: Text(preset['title']!),
-                            backgroundColor: isSelected ? AppColors.primary : Colors.white,
-                            labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              fontSize: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              side: BorderSide(
-                                color: isSelected ? AppColors.primary : AppColors.border,
-                              ),
-                            ),
-                            onPressed: () => _applyQuickPreset(preset),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                ],
-
                 // Banking Safety Alert Box (When storing Debit/Credit card)
                 if (_isPaymentCard) ...[
                   Container(
@@ -682,7 +622,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                               const SizedBox(width: 8),
                               const Expanded(
                                 child: Text(
-                                  'Scan attached (Encrypted on device)',
+                                  'Scan attached (Secured on device)',
                                   style: TextStyle(color: AppColors.textPrimaryNavy, fontSize: 12),
                                 ),
                               ),
@@ -706,29 +646,6 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                         ],
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Mark as Favourite
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: SwitchListTile(
-                    title: const Text(
-                      'Mark as Favourite',
-                      style: TextStyle(
-                        color: AppColors.textPrimaryNavy,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    value: _isFavourite,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (val) => setState(() => _isFavourite = val),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xl),

@@ -34,21 +34,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   String _selectedCategory = 'Social';
   PasswordStrength _strength = PasswordStrength.weak;
 
-  static const List<Map<String, String>> _popularApps = [
-    {'name': 'Instagram', 'cat': 'Social', 'url': 'https://instagram.com'},
-    {'name': 'Gmail / Google', 'cat': 'Email', 'url': 'https://google.com'},
-    {'name': 'Facebook', 'cat': 'Social', 'url': 'https://facebook.com'},
-    {'name': 'X (Twitter)', 'cat': 'Social', 'url': 'https://x.com'},
-    {'name': 'LinkedIn', 'cat': 'Work', 'url': 'https://linkedin.com'},
-    {'name': 'Telegram', 'cat': 'Social', 'url': 'https://telegram.org'},
-    {'name': 'Discord', 'cat': 'Social', 'url': 'https://discord.com'},
-    {'name': 'GitHub', 'cat': 'Work', 'url': 'https://github.com'},
-    {'name': 'Amazon', 'cat': 'Shopping', 'url': 'https://amazon.in'},
-    {'name': 'Flipkart', 'cat': 'Shopping', 'url': 'https://flipkart.com'},
-    {'name': 'Net Banking', 'cat': 'Finance', 'url': ''},
-    {'name': 'Company Creds', 'cat': 'Work', 'url': ''},
-  ];
-
   static const List<String> _categories = [
     'Social',
     'Email',
@@ -111,18 +96,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     _passwordController.dispose();
     _notesController.dispose();
     super.dispose();
-  }
-
-  void _applyQuickApp(Map<String, String> app) {
-    setState(() {
-      _nameController.text = app['name']!;
-      if (_categories.contains(app['cat'])) {
-        _selectedCategory = app['cat']!;
-      }
-      if (_urlController.text.trim().isEmpty && (app['url']?.isNotEmpty ?? false)) {
-        _urlController.text = app['url']!;
-      }
-    });
   }
 
   Future<void> _generateStrongPassword() async {
@@ -224,6 +197,14 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
           ),
         ),
         actions: [
+          IconButton(
+            icon: Icon(
+              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
+            ),
+            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
+            onPressed: () => setState(() => _isFavourite = !_isFavourite),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 14.0, top: 8.0, bottom: 8.0),
             child: ElevatedButton(
@@ -248,48 +229,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
           children: [
-            // Quick 1-Tap App Suggestions (Shown on add new)
-            if (!isEditing) ...[
-              const Text(
-                'Quick Presets (1-Tap Fill)',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: AppColors.textMutedNavy,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                child: Row(
-                  children: _popularApps.map((app) {
-                    final isSelected = _nameController.text.trim().toLowerCase() == app['name']!.toLowerCase();
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8.0),
-                      child: ActionChip(
-                        label: Text(app['name']!),
-                        backgroundColor: isSelected ? AppColors.primary : Colors.white,
-                        labelStyle: TextStyle(
-                          color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                          fontSize: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          side: BorderSide(
-                            color: isSelected ? AppColors.primary : AppColors.border,
-                          ),
-                        ),
-                        onPressed: () => _applyQuickApp(app),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-            ],
-
             // 1. Title / App Name
             const Text(
               'App / Website Name *',
@@ -466,25 +405,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
               maxLines: 2,
               decoration: const InputDecoration(
                 hintText: 'Security question hints, recovery notes, etc.',
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // Mark as Favourite
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              child: SwitchListTile(
-                title: const Text(
-                  'Mark as Favourite',
-                  style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimaryNavy),
-                ),
-                value: _isFavourite,
-                activeThumbColor: AppColors.primary,
-                onChanged: (val) => setState(() => _isFavourite = val),
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
