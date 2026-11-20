@@ -1,0 +1,17 @@
+secret:
+  ignored_matches:
+  - match: 213a39b5b81012a367bdbf7c7a83e927817a57df92767f1ce1645682e0079c09
+    name: Username Password - commit://staged/tool/screenshots.dart
+  - match: 2595dd071ac858e40207deb321ab969bfcbcc50cea69781a66ae7692ff1c6c78
+    name: Generic Password - commit://staged/tool/screenshots.dart
+  - match: bc6d69ecbc44a39431f4403fba6fdd8143ce2afb33ac984a703081f5d618ab3f
+    name: Generic Password - commit://staged/lib/core/database/vault_schema.dart
+  - match: c92d42df0304709a4a845308f82335665d410a44cd4ccbb2490eada7188a8ff1
+    name: Generic Password - commit://staged/lib/core/database/vault_schema.dart
+  - match: dcbf47ffd91663e3a338500fb66822350eebb6892a981c9f53c647ae5a40a9d3
+    name: Generic Password - commit://staged/lib/core/database/vault_schema.dart
+  - match: 8a1b9b1d34010b69da2efaa2ccb637878abac94145755513adb47150c99a6698
+    name: Generic Password - commit://staged/test/bug_fixes_regression_test.dart
+  - match: 5701d7fec5c6b1f6c2480392706ad11e2a2d82f93e297abb9fac7b649c14580a
+    name: Generic Password - commit://staged/test/data_integrity_test.dart
+version: 2

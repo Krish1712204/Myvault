@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -6,10 +7,8 @@ import 'package:myvault/core/security/vault_crypto_service.dart';
 import 'package:myvault/core/security/vault_session.dart';
 import 'package:myvault/core/security/vault_storage_service.dart';
 import 'package:myvault/core/security/vault_biometric_service.dart';
-import 'package:myvault/core/storage/encrypted_file_service.dart';
 import 'package:myvault/features/auth/domain/vault_auth_notifier.dart';
 import 'package:myvault/features/auth/domain/vault_auth_state.dart';
-import 'package:myvault/features/vault/data/vault_repository.dart';
 
 /// Mock biometric service for unit testing auth notifier
 class MockBiometricService extends VaultBiometricService {
@@ -24,8 +23,32 @@ class MockBiometricService extends VaultBiometricService {
   @override
   Future<bool> canAuthenticate() async => isSupported;
 
+  /// Simulates the Keystore: sealed blobs only open while [authSuccess] is true,
+  /// and [invalidateKey] mimics enrolling a new fingerprint.
+  final Map<String, List<int>> _sealed = {};
+  int _keyGeneration = 0;
+
+  void invalidateKey() => _keyGeneration++;
+
   @override
-  Future<bool> authenticate({String reason = ''}) async => authSuccess;
+  Future<String> seal(List<int> secret, {String title = '', String subtitle = '', String cancel = ''}) async {
+    if (!authSuccess) throw const BiometricKeyException(BiometricKeyError.cancelled);
+    final handle = 'gen$_keyGeneration';
+    _sealed[handle] = List<int>.from(secret);
+    return handle;
+  }
+
+  @override
+  Future<List<int>> unseal(String sealed, {String title = '', String subtitle = '', String cancel = ''}) async {
+    if (!authSuccess) throw const BiometricKeyException(BiometricKeyError.cancelled);
+    if (sealed != 'gen$_keyGeneration') {
+      throw const BiometricKeyException(BiometricKeyError.keyInvalidated);
+    }
+    return _sealed[sealed]!;
+  }
+
+  @override
+  Future<void> deleteKey() async => _sealed.clear();
 }
 
 void main() {
@@ -163,7 +186,7 @@ void main() {
 
     test('Session starts inactive with null master key', () {
       expect(session.isActive, isFalse);
-      expect(session.masterKey, isNull);
+      expect(session.vek, isNull);
     });
 
     test('startSession activates session and holds master key', () {
@@ -171,7 +194,7 @@ void main() {
       session.startSession(key);
 
       expect(session.isActive, isTrue);
-      expect(session.masterKey, equals(key));
+      expect(session.vek, equals(key));
       expect(session.lastActivityTime, isNotNull);
     });
 
@@ -198,7 +221,7 @@ void main() {
       session.clear();
 
       expect(session.isActive, isFalse);
-      expect(session.masterKey, isNull);
+      expect(session.vek, isNull);
       expect(session.lastActivityTime, isNull);
     });
   });
@@ -263,8 +286,6 @@ void main() {
     late MockBiometricService biometric;
     late VaultSession session;
     late VaultDatabase vaultDb;
-    late EncryptedFileService fileService;
-    late VaultRepository repository;
     late VaultAuthNotifier notifier;
 
     setUp(() async {
@@ -274,8 +295,6 @@ void main() {
       biometric = MockBiometricService(isSupported: true, authSuccess: true);
       session = VaultSession();
       vaultDb = VaultDatabase(customFactory: databaseFactoryFfi);
-      fileService = EncryptedFileService();
-      repository = VaultRepository(vaultDb: vaultDb, fileService: fileService);
 
       notifier = VaultAuthNotifier(
         cryptoService: crypto,
@@ -283,7 +302,6 @@ void main() {
         biometricService: biometric,
         session: session,
         vaultDb: vaultDb,
-        repository: repository,
       );
       await notifier.initialize();
     });
@@ -360,8 +378,15 @@ void main() {
       expect(vaultDb.isOpen, isFalse);
     });
 
+    test('Creating a vault does not silently enable fingerprint unlock', () async {
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      expect(notifier.state.isBiometricEnabled, isFalse);
+      expect(await storage.getSealedBiometricVek(), isNull);
+    });
+
     test('Biometric unlock unlocks vault when enabled', () async {
       await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      expect(await notifier.setBiometricEnabled(true), isTrue);
       await notifier.lockVault();
 
       final success = await notifier.unlockWithBiometrics();
@@ -369,6 +394,260 @@ void main() {
       expect(notifier.state.status, equals(VaultStatus.unlocked));
       expect(session.isActive, isTrue);
       expect(vaultDb.isOpen, isTrue);
+    });
+
+    test('Enrolling a new fingerprint invalidates the key and turns fingerprint unlock off', () async {
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      await notifier.setBiometricEnabled(true);
+      await notifier.lockVault();
+
+      biometric.invalidateKey();
+      expect(await notifier.unlockWithBiometrics(), isFalse);
+      expect(notifier.state.isBiometricEnabled, isFalse);
+      expect(notifier.state.errorMessage, contains('Fingerprints on this phone changed'));
+      expect(await storage.getSealedBiometricVek(), isNull);
+
+      // Master password still works.
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+    });
+
+    test('Cancelling the fingerprint prompt leaves fingerprint unlock off', () async {
+      final cancelling = VaultAuthNotifier(
+        cryptoService: crypto,
+        storageService: storage,
+        biometricService: MockBiometricService(isSupported: true, authSuccess: false),
+        session: session,
+        vaultDb: vaultDb,
+      );
+      await cancelling.initialize();
+      await cancelling.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+
+      expect(await cancelling.setBiometricEnabled(true), isFalse);
+      expect(cancelling.state.isBiometricEnabled, isFalse);
+      expect(cancelling.state.errorMessage, isNull);
+      cancelling.dispose();
+    });
+
+    test('Legacy plain-storage biometric key is discarded and re-enrolment offered once', () async {
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      await notifier.lockVault();
+      // Simulate what older versions stored.
+      await const FlutterSecureStorage().write(key: 'myvault_biometric_wrapping_key', value: 'AAAA');
+      await const FlutterSecureStorage().write(key: 'myvault_biometric_enabled', value: 'true');
+
+      await notifier.initialize();
+      expect(await storage.hasLegacyBiometricKey(), isFalse);
+      expect(notifier.state.isBiometricEnabled, isFalse);
+      expect(notifier.state.offerBiometricSetup, isTrue);
+
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+      expect(await notifier.takeBiometricSetupOffer(), isTrue);
+      expect(await notifier.takeBiometricSetupOffer(), isFalse);
+    });
+
+    test('changeMasterPassword rejects a wrong current password and keeps the old one', () async {
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+
+      final error = await notifier.changeMasterPassword(
+        currentPassword: 'WrongVault#Pass1',
+        newPassword: 'NewerVault#Pass2',
+        confirmPassword: 'NewerVault#Pass2',
+      );
+      expect(error, equals('Current password is incorrect.'));
+
+      await notifier.lockVault();
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+    });
+
+    test('changeMasterPassword re-wraps the VEK: new password unlocks the same data', () async {
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      final originalVek = session.vek!;
+
+      final error = await notifier.changeMasterPassword(
+        currentPassword: 'StrongVault#Pass1',
+        newPassword: 'NewerVault#Pass2',
+        confirmPassword: 'NewerVault#Pass2',
+      );
+      expect(error, isNull);
+
+      await notifier.lockVault();
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isFalse);
+      expect(await notifier.unlockWithPassword('NewerVault#Pass2'), isTrue);
+      expect(session.vek, equals(originalVek));
+    });
+  });
+
+  group('6. Credential storage format', () {
+    test('Reads credentials stored in the legacy per-key format', () async {
+      final crypto = VaultCryptoService();
+      final derived = await crypto.deriveMasterKeyAndVerifier(password: 'StrongVault#Pass1');
+      final vek = crypto.generateVek();
+      final wrapped = await crypto.wrapVek(vek: vek, wrappingKey: derived.derivedKeyBytes);
+
+      FlutterSecureStorage.setMockInitialValues({
+        'myvault_is_created': 'true',
+        'myvault_salt': base64Encode(derived.saltBytes),
+        'myvault_verifier': base64Encode(derived.verifierHashBytes),
+        'myvault_kdf_params': jsonEncode(derived.kdfParams),
+        'myvault_wrapped_vek_kek': jsonEncode(wrapped),
+      });
+      final storage = VaultStorageService(storage: const FlutterSecureStorage());
+
+      expect(await storage.hasVault(), isTrue);
+      expect(await storage.getSalt(), equals(derived.saltBytes));
+      expect(await storage.getVerifier(), equals(derived.verifierHashBytes));
+      expect(await storage.getKdfParams(), equals(derived.kdfParams));
+      expect(await storage.getWrappedVekKek(), equals(wrapped));
+    });
+
+    test('Saving credentials writes one combined record and drops legacy keys', () async {
+      FlutterSecureStorage.setMockInitialValues({'myvault_salt': 'stale'});
+      const secure = FlutterSecureStorage();
+      final storage = VaultStorageService(storage: secure);
+
+      await storage.saveVaultCredentials(
+        salt: [1, 2, 3],
+        verifierHash: [4, 5, 6],
+        kdfParams: {'algorithm': 'Argon2id'},
+        wrappedVekKek: {'iv': 'a', 'ciphertext': 'b', 'tag': 'c'},
+      );
+
+      final all = await secure.readAll();
+      expect(all.containsKey('myvault_credentials_v2'), isTrue);
+      expect(all.containsKey('myvault_salt'), isFalse);
+      expect(await storage.getSalt(), equals([1, 2, 3]));
+      expect(await storage.getWrappedVekKek(), equals({'iv': 'a', 'ciphertext': 'b', 'tag': 'c'}));
+    });
+  });
+
+  group('7. Brute-force limits, KDF parameters and auto-lock policy', () {
+    late VaultStorageService storage;
+    late VaultDatabase vaultDb;
+    late DateTime now;
+    late VaultAuthNotifier notifier;
+
+    setUp(() async {
+      FlutterSecureStorage.setMockInitialValues({});
+      storage = VaultStorageService(storage: const FlutterSecureStorage());
+      vaultDb = VaultDatabase(customFactory: databaseFactoryFfi);
+      now = DateTime(2026, 10, 31, 12);
+      notifier = VaultAuthNotifier(
+        cryptoService: VaultCryptoService(),
+        storageService: storage,
+        biometricService: MockBiometricService(isSupported: false, authSuccess: false),
+        session: VaultSession(),
+        vaultDb: vaultDb,
+        clock: () => now,
+      );
+      await notifier.initialize();
+      await notifier.createVault('StrongVault#Pass1', 'StrongVault#Pass1');
+      await notifier.lockVault();
+    });
+
+    tearDown(() async {
+      notifier.dispose();
+      await vaultDb.close();
+    });
+
+    test('lockoutFor: free attempts, then 30s doubling, capped at 1 hour', () {
+      expect(VaultAuthNotifier.lockoutFor(4), Duration.zero);
+      expect(VaultAuthNotifier.lockoutFor(5), const Duration(seconds: 30));
+      expect(VaultAuthNotifier.lockoutFor(6), const Duration(seconds: 60));
+      expect(VaultAuthNotifier.lockoutFor(50), const Duration(hours: 1));
+    });
+
+    test('After 5 wrong passwords even the correct one is refused until the delay passes', () async {
+      for (var i = 0; i < 5; i++) {
+        expect(await notifier.unlockWithPassword('WrongVault#Pass1'), isFalse);
+      }
+      expect(notifier.state.errorMessage, contains('Try again in 30 seconds'));
+
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isFalse);
+      expect(notifier.state.status, VaultStatus.locked);
+
+      now = now.add(const Duration(seconds: 31));
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+      expect(await storage.getFailedAttempts(), 0);
+    });
+
+    test('Change-password dialog is subject to the same lockout', () async {
+      for (var i = 0; i < 5; i++) {
+        await notifier.unlockWithPassword('WrongVault#Pass1');
+      }
+      final error = await notifier.changeMasterPassword(
+        currentPassword: 'StrongVault#Pass1',
+        newPassword: 'NewerVault#Pass2',
+        confirmPassword: 'NewerVault#Pass2',
+      );
+      expect(error, contains('Too many failed attempts'));
+    });
+
+    test('Unlock uses the KDF parameters stored with the vault', () async {
+      final crypto = VaultCryptoService();
+
+      // Recover the real VEK using the credentials createVault stored (default parameters).
+      final currentKek = await crypto.deriveMasterKeyAndVerifier(
+        password: 'StrongVault#Pass1',
+        existingSalt: (await storage.getSalt())!,
+      );
+      final realVek = await crypto.unwrapVek(
+        wrappedVek: (await storage.getWrappedVekKek())!,
+        wrappingKey: currentKek.derivedKeyBytes,
+      );
+
+      // Re-store the credentials derived with NON-default parameters.
+      final custom = await crypto.deriveMasterKeyAndVerifier(
+        password: 'StrongVault#Pass1',
+        kdfParams: const {'memory': 8192, 'iterations': 1, 'parallelism': 1},
+      );
+      await storage.saveVaultCredentials(
+        salt: custom.saltBytes,
+        verifierHash: custom.verifierHashBytes,
+        kdfParams: custom.kdfParams,
+        wrappedVekKek: await crypto.wrapVek(vek: realVek, wrappingKey: custom.derivedKeyBytes),
+      );
+
+      // Default parameters give a different key, so unlocking proves the stored ones were used.
+      final withDefaults = await crypto.deriveMasterKeyAndVerifier(
+        password: 'StrongVault#Pass1',
+        existingSalt: custom.saltBytes,
+      );
+      expect(withDefaults.verifierHashBytes, isNot(equals(custom.verifierHashBytes)));
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+    });
+
+    test('Out-of-bounds stored KDF parameters are rejected, not executed', () async {
+      expect(
+        () => VaultCryptoService().deriveMasterKeyAndVerifier(
+          password: 'x',
+          kdfParams: {'memory': 4 * 1024 * 1024},
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('Leaving the app locks by default, except for our own file picker / viewer', () async {
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+      expect(notifier.state.lockOnBackground, isTrue);
+
+      notifier.allowExternalActivity();
+      await notifier.checkAutoLock(isBackgrounding: true);
+      expect(notifier.state.status, VaultStatus.unlocked);
+      await notifier.checkAutoLock(); // resumed
+      expect(notifier.state.status, VaultStatus.unlocked);
+
+      // The grace is one-shot: a normal app switch afterwards locks.
+      await notifier.checkAutoLock(isBackgrounding: true);
+      expect(notifier.state.status, VaultStatus.locked);
+    });
+
+    test('With lock-on-leave off, a short app switch keeps the vault unlocked', () async {
+      await notifier.setLockOnBackground(false);
+      expect(await notifier.unlockWithPassword('StrongVault#Pass1'), isTrue);
+
+      await notifier.checkAutoLock(isBackgrounding: true);
+      expect(notifier.state.status, VaultStatus.unlocked);
+      expect(await storage.getLockOnBackground(), isFalse);
     });
   });
 }

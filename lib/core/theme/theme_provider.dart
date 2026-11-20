@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../security/vault_storage_service.dart';
 
 const String _themePrefKey = 'user_theme_mode';
 
@@ -8,7 +9,7 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   final FlutterSecureStorage _storage;
 
   ThemeModeNotifier({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage(),
+      : _storage = storage ?? vaultSecureStorage,
         super(ThemeMode.light) {
     _loadTheme();
   }

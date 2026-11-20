@@ -261,7 +261,7 @@ void main() {
       // 2. Inspect Header without decrypting payload
       final inspection = await sourceBackupService.inspectBackupFile(backupBytes);
       expect(inspection.format, equals('MYVAULT_BACKUP'));
-      expect(inspection.version, equals(1));
+      expect(inspection.version, equals(2));
       expect(inspection.kdfAlgorithm, equals('Argon2id'));
       expect(inspection.itemCount, equals(5));
       expect(inspection.fileCount, equals(2)); // id attachment + doc attachment
@@ -295,7 +295,7 @@ void main() {
         fileBytes: backupBytes,
         passphrase: backupPassphrase,
       );
-      expect(decryptedPayload.version, equals(1));
+      expect(decryptedPayload.version, equals(2));
       expect(decryptedPayload.vaultItems.length, equals(5));
       expect(decryptedPayload.files.length, equals(2));
 
@@ -640,7 +640,7 @@ void main() {
       );
 
       // 3. Attempt restore and verify it throws BackupException
-      expect(
+      await expectLater(
         () => sourceBackupService.restoreBackupPayload(
           payload: corruptPayload,
           currentVek: sourceVek,
@@ -649,7 +649,7 @@ void main() {
         throwsA(isA<BackupException>().having(
           (e) => e.message,
           'message',
-          contains('Restoration failed and changes were rolled back'),
+          contains('Your vault was not changed'),
         )),
       );
 

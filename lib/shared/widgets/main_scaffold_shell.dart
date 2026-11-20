@@ -1,6 +1,8 @@
+import '../../core/brand/vault_mark.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
+import 'add_to_vault_sheet.dart';
 
 class MainScaffoldShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
@@ -17,128 +19,6 @@ class MainScaffoldShell extends StatelessWidget {
     );
   }
 
-  void _showAddItemSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppColors.border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Add to Vault',
-                style: TextStyle(
-                  color: AppColors.textPrimaryNavy,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.categoryPasswordsBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.key_rounded, color: AppColors.categoryPasswords),
-                ),
-                title: const Text('Password', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Website, application, or account login credentials'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/add-item');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.categoryIdCardsBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.badge_outlined, color: AppColors.categoryIdCards),
-                ),
-                title: const Text('ID Card', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Aadhaar, PAN, Passport, Driving License, Voter ID'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/add-id');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.categoryDocumentsBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.file_present_rounded, color: AppColors.categoryDocuments),
-                ),
-                title: const Text('Document or Photo', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('PDF, JPG, PNG, WEBP, or document file'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/add-document');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.categoryNotesBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.sticky_note_2_rounded, color: AppColors.categoryNotes),
-                ),
-                title: const Text('Note', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Secure, multiline private notes with tags'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/add-note');
-                },
-              ),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.categoryContactsBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.person_rounded, color: AppColors.categoryContacts),
-                ),
-                title: const Text('Contact', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Private contact with phone and email'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.push('/add-contact');
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final currentIndex = navigationShell.currentIndex;
@@ -150,14 +30,10 @@ class MainScaffoldShell extends StatelessWidget {
         width: 56,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(
-            colors: [Color(0xFF2979FF), Color(0xFF1565C0)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: VaultMarkPainter.brandGradient,
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF2979FF).withAlpha(100),
+              color: VaultMarkPainter.gradientStart.withAlpha(100),
               blurRadius: 14,
               offset: const Offset(0, 6),
             ),
@@ -166,7 +42,7 @@ class MainScaffoldShell extends StatelessWidget {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => _showAddItemSheet(context),
+            onTap: () => showAddToVaultSheet(context),
             customBorder: const CircleBorder(),
             child: const Center(
               child: Icon(Icons.add_rounded, color: Colors.white, size: 30),
@@ -178,9 +54,10 @@ class MainScaffoldShell extends StatelessWidget {
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
         notchMargin: 8.0,
-        color: Colors.white,
-        elevation: 12,
-        shadowColor: Colors.black26,
+        color: AppColors.surface,
+        // A light lift: a heavy shadow reads as a grey band above the bar.
+        elevation: 4,
+        shadowColor: Colors.black.withAlpha(AppColors.isDark ? 90 : 30),
         surfaceTintColor: Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 6),
         height: 68,

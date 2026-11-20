@@ -6,9 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../../shared/navigation/item_routes.dart';
+import '../../../../shared/state/item_search.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../../vault_items/data/vault_item_model.dart';
+import '../widgets/file_grid.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 
+import '../../../../shared/widgets/letter_avatar.dart';
+import '../../../../core/ui/formatters.dart';
+import '../../../../core/ui/user_message.dart';
+import '../../../../shared/state/item_display.dart';
 import '../../../../core/security/clipboard_service.dart';
 
 class CategoryItemsScreen extends ConsumerStatefulWidget {
@@ -27,6 +35,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
   final _searchController = TextEditingController();
   String _selectedSubcategory = 'All';
   bool _isSelectionMode = false;
+  bool _photoGrid = true;
   final Set<String> _selectedItemIds = <String>{};
 
   @override
@@ -68,28 +77,40 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         _isSelectionMode = false;
         _selectedItemIds.clear();
       });
-      await ref.read(vaultItemsProvider.notifier).removeItems(idsToDelete);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItems(idsToDelete);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted $count items')),
+        deleted
+            ? SnackBar(content: Text('Deleted $count items'))
+            : const SnackBar(
+                content: Text('Some items could not be deleted. Please try again.'),
+                backgroundColor: AppColors.error,
+              ),
       );
     }
   }
 
   Future<void> _uploadVcfFile(BuildContext context) async {
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final files = await FilePicker.pickFiles(
         type: FileType.any,
       );
       if (files.isNotEmpty) {
         final file = files.first;
         final bytes = await file.readAsBytes();
+        // The picker leaves an unencrypted copy in the app cache; remove it now.
+        FilePicker.clearTemporaryFiles().ignore();
         final content = utf8.decode(bytes, allowMalformed: true);
-        final count = await ref.read(vaultItemsProvider.notifier).importContactsFromVcf(content);
+        final result = await ref.read(vaultItemsProvider.notifier).importContactsFromVcf(content);
         if (context.mounted) {
+          final imported = '${result.imported} contact${result.imported == 1 ? '' : 's'} imported';
+          final skipped = result.duplicates > 0
+              ? ' (${result.duplicates} already in your vault, skipped)'
+              : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Successfully imported $count contacts in ascending order!'),
+              content: Text('$imported$skipped'),
               backgroundColor: AppColors.success,
               behavior: SnackBarBehavior.floating,
             ),
@@ -100,7 +121,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to import contacts: $e'),
+            content: Text('Could not import contacts. ${userMessage(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -133,8 +154,17 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${item.title} deleted')),
       );
@@ -143,7 +173,8 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isFavouritesCategory = widget.categoryKey.toLowerCase().contains('favor');
+    final key = widget.categoryKey.toLowerCase();
+    final isFavouritesCategory = key == 'favourites' || key == 'favorites';
     final category = isFavouritesCategory
         ? VaultCategory.passwords
         : VaultCategory.fromKey(widget.categoryKey);
@@ -153,69 +184,16 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         : ref.watch(itemsByCategoryProvider(category));
     final query = _searchController.text.trim().toLowerCase();
 
-    final subcategories = isFavouritesCategory
-        ? ['All', 'Passwords', 'Documents', 'Photos', 'Cards', 'Notes', 'Contacts']
-        : _getSubcategoriesFor(category);
+    final subcategories = _filtersFor(isFavouritesCategory ? null : category, items);
+    // A filter that no longer applies (e.g. its last item was deleted) falls back to All.
+    final activeFilter = subcategories.contains(_selectedSubcategory) ? _selectedSubcategory : 'All';
 
     final filteredItems = items.where((item) {
-      if (_selectedSubcategory != 'All') {
-        final selSub = _selectedSubcategory.toLowerCase();
-        final itemSub = item.subcategory?.toLowerCase() ?? '';
-        final ext = item.fileExtension?.toLowerCase() ?? '';
-        final fileName = item.fileName?.toLowerCase() ?? '';
-        final mime = item.mimeType?.toLowerCase() ?? '';
-
-        if (selSub == 'pdf') {
-          final isPdf = ext == '.pdf' ||
-              fileName.endsWith('.pdf') ||
-              mime.contains('pdf') ||
-              item.title.toLowerCase().contains('.pdf') ||
-              item.title.toLowerCase().contains('pdf');
-          if (!isPdf) return false;
-        } else if (selSub == 'images' || selSub == 'photos') {
-          final isImg = ext == '.jpg' ||
-              ext == '.jpeg' ||
-              ext == '.png' ||
-              ext == '.webp' ||
-              ext == '.gif' ||
-              mime.startsWith('image/') ||
-              item.category == VaultCategory.photos ||
-              fileName.endsWith('.jpg') ||
-              fileName.endsWith('.png');
-          if (!isImg) return false;
-        } else if (selSub == 'others' || selSub == 'other') {
-          final isPdf = ext == '.pdf' || fileName.endsWith('.pdf') || mime.contains('pdf');
-          final isImg = ext == '.jpg' ||
-              ext == '.jpeg' ||
-              ext == '.png' ||
-              ext == '.webp' ||
-              mime.startsWith('image/');
-          if (isPdf || isImg) return false;
-        } else if (isFavouritesCategory) {
-          final catName = item.category.displayName.toLowerCase();
-          if (!catName.contains(selSub) && !selSub.contains(catName)) return false;
-        } else {
-          final matchesSub = itemSub == selSub ||
-              (selSub == 'websites' && itemSub == 'website') ||
-              (selSub == 'website' && itemSub == 'websites') ||
-              (selSub == 'apps' && itemSub == 'app') ||
-              (item.tags?.toLowerCase().contains(selSub) ?? false) ||
-              fileName.toLowerCase().contains(selSub);
-          if (!matchesSub) return false;
-        }
+      if (activeFilter != 'All' && _filterLabelOf(isFavouritesCategory ? null : category, item) != activeFilter) {
+        return false;
       }
       if (query.isEmpty) return true;
-      return item.title.toLowerCase().contains(query) ||
-          item.subtitle.toLowerCase().contains(query) ||
-          (item.url != null && item.url!.toLowerCase().contains(query)) ||
-          (item.username != null && item.username!.toLowerCase().contains(query)) ||
-          (item.details != null && item.details!.toLowerCase().contains(query)) ||
-          (item.tags != null && item.tags!.toLowerCase().contains(query)) ||
-          (item.phoneNumber != null && item.phoneNumber!.toLowerCase().contains(query)) ||
-          (item.email != null && item.email!.toLowerCase().contains(query)) ||
-          (item.company != null && item.company!.toLowerCase().contains(query)) ||
-          (item.jobTitle != null && item.jobTitle!.toLowerCase().contains(query)) ||
-          (item.address != null && item.address!.toLowerCase().contains(query));
+      return itemMatchesQuery(item, query);
     }).toList();
 
     if (category == VaultCategory.contacts) {
@@ -237,9 +215,9 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
         backgroundColor: AppColors.background,
         appBar: _isSelectionMode
             ? AppBar(
-                backgroundColor: Colors.white,
+                backgroundColor: AppColors.surface,
                 leading: IconButton(
-                  icon: const Icon(Icons.close_rounded, color: AppColors.textPrimaryNavy),
+                  icon: Icon(Icons.close_rounded, color: AppColors.textPrimaryNavy),
                   onPressed: () {
                     setState(() {
                       _isSelectionMode = false;
@@ -249,7 +227,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                 ),
                 title: Text(
                   '${_selectedItemIds.length} selected',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: AppColors.textPrimaryNavy,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -295,7 +273,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                   children: [
                     Text(
                       isFavouritesCategory ? 'Favourites' : category.displayName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimaryNavy,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -303,7 +281,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                     ),
                     Text(
                       '${filteredItems.length} items',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textMutedNavy,
                         fontSize: 12,
                       ),
@@ -311,6 +289,15 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                   ],
                 ),
                 actions: [
+                  if (_supportsGrid(isFavouritesCategory, category))
+                    IconButton(
+                      tooltip: _photoGrid ? 'Show as list' : 'Show as grid',
+                      icon: Icon(
+                        _photoGrid ? Icons.view_list_rounded : Icons.grid_view_rounded,
+                        color: AppColors.primary,
+                      ),
+                      onPressed: () => setState(() => _photoGrid = !_photoGrid),
+                    ),
                   if (filteredItems.isNotEmpty)
                     IconButton(
                       icon: const Icon(Icons.checklist_rounded, color: AppColors.primary, size: 24),
@@ -330,21 +317,8 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                   if (!isFavouritesCategory)
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline_rounded, color: AppColors.primary, size: 26),
-                      onPressed: () {
-                        if (category == VaultCategory.passwords) {
-                          context.push('/add-item');
-                        } else if (category == VaultCategory.idCards) {
-                          context.push('/add-id');
-                        } else if (category == VaultCategory.documents || category == VaultCategory.photos) {
-                          context.push('/add-document');
-                        } else if (category == VaultCategory.notes) {
-                          context.push('/add-note');
-                        } else if (category == VaultCategory.contacts) {
-                          context.push('/add-contact');
-                        } else {
-                          context.push('/add-item');
-                        }
-                      },
+                      tooltip: 'Add',
+                      onPressed: () => context.push(addRouteFor(category)),
                     ),
                   const SizedBox(width: 8),
                 ],
@@ -360,18 +334,18 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                     controller: _searchController,
                     onChanged: (_) => setState(() {}),
                     decoration: InputDecoration(
-                      hintText: 'Search ${category.displayName.toLowerCase()}...',
-                      prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMutedNavy),
+                      hintText: 'Search ${isFavouritesCategory ? 'favourites' : category.displayName.toLowerCase()}...',
+                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMutedNavy),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, color: AppColors.textMutedNavy),
+                              icon: Icon(Icons.clear_rounded, color: AppColors.textMutedNavy),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() {});
                               },
                             )
                           : null,
-                      fillColor: Colors.white,
+                      fillColor: AppColors.surface,
                       contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                     ),
                   ),
@@ -382,7 +356,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                       child: ListView(
                         scrollDirection: Axis.horizontal,
                         children: subcategories.map((sub) {
-                          final isSelected = _selectedSubcategory == sub;
+                          final isSelected = activeFilter == sub;
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: FilterChip(
@@ -390,7 +364,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                               selected: isSelected,
                               onSelected: (_) => setState(() => _selectedSubcategory = sub),
                               selectedColor: AppColors.primary,
-                              backgroundColor: Colors.white,
+                              backgroundColor: AppColors.surface,
                               labelStyle: TextStyle(
                                 color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -419,9 +393,35 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                   ? Center(
                       child: Text(
                         'No ${category.displayName.toLowerCase()} found',
-                        style: const TextStyle(color: AppColors.textMutedNavy),
+                        style: TextStyle(color: AppColors.textMutedNavy),
                       ),
                     )
+                  : (_supportsGrid(isFavouritesCategory, category) && _photoGrid)
+                      ? FileGrid(
+                          items: filteredItems,
+                          showTitles: category == VaultCategory.documents,
+                          selectionMode: _isSelectionMode,
+                          selectedIds: _selectedItemIds,
+                          onTap: (item) {
+                            if (_isSelectionMode) {
+                              setState(() {
+                                if (!_selectedItemIds.remove(item.id)) _selectedItemIds.add(item.id);
+                                if (_selectedItemIds.isEmpty) _isSelectionMode = false;
+                              });
+                            } else {
+                              context.push(detailRouteFor(item));
+                            }
+                          },
+                          onLongPress: (item) => setState(() {
+                            _isSelectionMode = true;
+                            _selectedItemIds.add(item.id);
+                          }),
+                          onSelectGroup: (ids, select) => setState(() {
+                            _isSelectionMode = true;
+                            select ? _selectedItemIds.addAll(ids) : _selectedItemIds.removeAll(ids);
+                            if (_selectedItemIds.isEmpty) _isSelectionMode = false;
+                          }),
+                        )
                   : ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
                       itemCount: filteredItems.length,
@@ -431,7 +431,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
 
                         return Card(
                           margin: const EdgeInsets.only(bottom: 8),
-                          color: isSelected ? const Color(0xFFEBF3FF) : Colors.white,
+                          color: isSelected ? AppColors.primaryLight : AppColors.surface,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
                             side: BorderSide(
@@ -503,7 +503,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                 : _buildItemAvatar(item),
                             title: Text(
                               item.title,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textPrimaryNavy,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 15,
@@ -517,15 +517,15 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                         item.subtitle,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           color: AppColors.textMutedNavy,
                                           fontSize: 13,
                                         ),
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        'Updated: ${item.date}',
-                                        style: const TextStyle(
+                                        'Updated ${relativeTime(item.updatedAt ?? item.createdAt ?? 0, DateTime.now())}',
+                                        style: TextStyle(
                                           color: AppColors.textMutedNavy,
                                           fontSize: 11,
                                           fontWeight: FontWeight.w500,
@@ -534,8 +534,10 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                     ],
                                   )
                                 : Text(
-                                    item.subtitle,
-                                    style: const TextStyle(
+                                    item.displaySubtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
                                       color: AppColors.textMutedNavy,
                                       fontSize: 13,
                                     ),
@@ -557,12 +559,20 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
                                     color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
                                     size: 22,
                                   ),
-                                  onPressed: () {
-                                    ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+                                  onPressed: () async {
+                                    final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+                                    if (!saved && context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Could not update favourite. Please try again.'),
+                                          backgroundColor: AppColors.error,
+                                        ),
+                                      );
+                                    }
                                   },
                                 ),
                                 PopupMenuButton<String>(
-                                  icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy, size: 20),
+                                  icon: Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy, size: 20),
                                   onSelected: (action) {
                                     if (action == 'view') {
                                       if (category == VaultCategory.passwords) {
@@ -664,41 +674,7 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
 
   Widget _buildItemAvatar(VaultItem item) {
     if (item.category == VaultCategory.passwords) {
-      Color bg = AppColors.primaryLight;
-      Color textCol = AppColors.primary;
-      String letter = item.title.isNotEmpty ? item.title[0].toUpperCase() : 'P';
-      if (item.title == 'Google') {
-        bg = const Color(0xFFEA4335).withAlpha(30);
-        textCol = const Color(0xFFEA4335);
-      } else if (item.title == 'GitHub') {
-        bg = const Color(0xFF24292E).withAlpha(30);
-        textCol = const Color(0xFF24292E);
-      } else if (item.title == 'Amazon') {
-        bg = const Color(0xFFFF9900).withAlpha(30);
-        textCol = const Color(0xFFFF9900);
-      } else if (item.title == 'Netflix') {
-        bg = const Color(0xFFE50914).withAlpha(30);
-        textCol = const Color(0xFFE50914);
-      }
-
-      return Container(
-        width: 42,
-        height: 42,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Center(
-          child: Text(
-            letter,
-            style: TextStyle(
-              color: textCol,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
-            ),
-          ),
-        ),
-      );
+      return LetterAvatar(name: item.title, size: 42);
     }
 
     if (item.category == VaultCategory.contacts) {
@@ -784,21 +760,47 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
     );
   }
 
-  List<String> _getSubcategoriesFor(VaultCategory category) {
+  /// Photos and Documents can be shown as a preview grid.
+  static bool _supportsGrid(bool isFavourites, VaultCategory category) =>
+      !isFavourites && (category == VaultCategory.photos || category == VaultCategory.documents);
+
+  /// The filter bucket an item belongs to. [category] is null for the Favourites list.
+  static String _filterLabelOf(VaultCategory? category, VaultItem item) {
+    if (category == null) return item.category.displayName;
     switch (category) {
-      case VaultCategory.passwords:
-        return ['All', 'Websites', 'Apps', 'Finance', 'Other'];
-      case VaultCategory.idCards:
-        return ['All', 'Government', 'Personal', 'Work'];
       case VaultCategory.documents:
-        return ['All', 'PDF', 'Images', 'Others'];
+        final ext = (item.fileExtension ?? '').toLowerCase();
+        final mime = (item.mimeType ?? '').toLowerCase();
+        if (ext == '.pdf' || mime.contains('pdf')) return 'PDF';
+        if (mime.startsWith('image/') || const ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'].contains(ext)) {
+          return 'Images';
+        }
+        return 'Other';
+      case VaultCategory.idCards:
+        final type = (item.documentType ?? '').trim();
+        return type.isNotEmpty ? type : item.title;
       case VaultCategory.photos:
-        return ['All', 'Images', 'Camera', 'Screenshots', 'Saved'];
+        return 'All';
+      case VaultCategory.passwords:
       case VaultCategory.notes:
-        return ['All', 'Personal', 'Work', 'Ideas', 'Finance', 'Other'];
       case VaultCategory.contacts:
-        return ['All', 'Personal', 'Work', 'Family', 'Emergency', 'Other'];
+        final sub = (item.subcategory ?? '').trim();
+        return sub.isEmpty ? 'Other' : sub;
     }
+  }
+
+  /// Filter chips built from the items actually present, so no chip ever leads to an empty
+  /// list. Returns an empty list (no chips) when there is nothing to choose between.
+  static List<String> _filtersFor(VaultCategory? category, List<VaultItem> items) {
+    if (category == VaultCategory.photos) return const [];
+    final labels = <String>{for (final item in items) _filterLabelOf(category, item)}.toList();
+    if (category == null) {
+      final order = VaultCategory.values.map((c) => c.displayName).toList();
+      labels.sort((a, b) => order.indexOf(a).compareTo(order.indexOf(b)));
+    } else {
+      labels.sort((a, b) => a == 'Other' ? 1 : b == 'Other' ? -1 : a.toLowerCase().compareTo(b.toLowerCase()));
+    }
+    return labels.length < 2 ? const [] : ['All', ...labels];
   }
 
   void _showItemDetailsDialog(BuildContext context, VaultItem item) {
@@ -822,13 +824,13 @@ class _CategoryItemsScreenState extends ConsumerState<CategoryItemsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Subtitle: ${item.subtitle}', style: const TextStyle(color: AppColors.textSecondaryNavy)),
+            Text('Subtitle: ${item.subtitle}', style: TextStyle(color: AppColors.textSecondaryNavy)),
             if (item.details != null) ...[
               const SizedBox(height: 8),
-              Text('Details: ${item.details}', style: const TextStyle(color: AppColors.textMutedNavy)),
+              Text('Details: ${item.details}', style: TextStyle(color: AppColors.textMutedNavy)),
             ],
             const SizedBox(height: 8),
-            Text('Date: ${item.date}', style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 12)),
+            Text('Date: ${item.date}', style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12)),
           ],
         ),
         actions: [

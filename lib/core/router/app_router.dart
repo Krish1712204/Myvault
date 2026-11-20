@@ -5,6 +5,7 @@ import '../../features/auth/domain/vault_auth_notifier.dart';
 import '../../features/auth/domain/vault_auth_state.dart';
 import '../../features/auth/presentation/screens/create_vault_screen.dart';
 import '../../features/auth/presentation/screens/unlock_vault_screen.dart';
+import '../../features/auth/presentation/widgets/biometric_setup_prompter.dart';
 import '../../features/auth/presentation/screens/welcome_screen.dart';
 import '../../features/categories/presentation/screens/categories_screen.dart';
 import '../../features/categories/presentation/screens/category_items_screen.dart';
@@ -12,6 +13,7 @@ import '../../features/dashboard/presentation/screens/home_dashboard_screen.dart
 import '../../features/search/presentation/screens/search_screen.dart';
 import '../../features/settings/presentation/screens/backup_restore_screen.dart';
 import '../../features/settings/presentation/screens/settings_screen.dart';
+import '../../features/vault_items/data/vault_item_model.dart';
 import '../../features/vault_items/presentation/screens/add_contact_screen.dart';
 import '../../features/vault_items/presentation/screens/add_document_screen.dart';
 import '../../features/vault_items/presentation/screens/add_identity_screen.dart';
@@ -90,7 +92,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Shell Route with Bottom Navigation Bar
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
-          return MainScaffoldShell(navigationShell: navigationShell);
+          return BiometricSetupPrompter(
+            child: MainScaffoldShell(navigationShell: navigationShell),
+          );
         },
         branches: [
           // Tab 0: Home Dashboard
@@ -211,7 +215,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/add-document',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AddDocumentScreen(),
+        builder: (context, state) => AddDocumentScreen(
+          initialCategory: state.uri.queryParameters['type'] == 'photos'
+              ? VaultCategory.photos
+              : VaultCategory.documents,
+        ),
       ),
       GoRoute(
         path: '/edit-document/:id',

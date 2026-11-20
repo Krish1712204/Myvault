@@ -7,8 +7,10 @@ import '../../features/auth/domain/vault_auth_notifier.dart';
 import '../../features/auth/domain/vault_auth_state.dart';
 import '../../features/vault/data/vault_models.dart';
 import '../../features/vault/data/vault_repository.dart';
-import '../../features/vault_items/data/mock_vault_data.dart';
+import '../../core/storage/thumbnail_service.dart';
+import '../../core/backup/google_drive_backup_service.dart';
 import '../../features/vault_items/data/vault_item_model.dart';
+import '../widgets/bold_text.dart';
 
 /// Manages vault items state (supports real SQLCipher storage via repository)
 class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
@@ -23,7 +25,12 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     _ref.listen<VaultAuthState>(vaultAuthStateProvider, (previous, next) {
       if (next.status == VaultStatus.unlocked) {
         loadItems();
+        if (previous?.status != VaultStatus.unlocked) {
+          // Upload changes that were made just before the vault last locked.
+          _ref.read(googleDriveBackupServiceProvider).resumePendingBackup();
+        }
       } else if (next.status == VaultStatus.locked || next.status == VaultStatus.uninitialized) {
+        _thumbnailCache.clear();
         state = [];
       }
     });
@@ -33,16 +40,27 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
   }
 
-  /// Reloads all items from the encrypted database
-  Future<void> loadItems() async {
+  /// Reloads all items from the encrypted database.
+  /// On failure the current state is kept as-is; it is never replaced with sample data.
+  Future<bool> loadItems() async {
     try {
       final items = await _repository.getAllItems();
       state = items;
+      return true;
     } catch (_) {
-      if (state.isEmpty) {
-        state = MockVaultData.items;
-      }
+      return false;
     }
+  }
+
+  static final Random _idRandom = Random.secure();
+
+  /// A new, unique item id: microsecond timestamp plus 32 random bits, so items saved in
+  /// the same instant (double taps, bulk imports) never collide.
+  static String _newItemId(String prefix) =>
+      '${prefix}_${DateTime.now().microsecondsSinceEpoch}_${_idRandom.nextInt(1 << 32).toRadixString(36)}';
+
+  void _requestAutomaticDriveBackup() {
+    _ref.read(googleDriveBackupServiceProvider).requestAutomaticBackup();
   }
 
   /// Saves (creates or updates) a password item with full relational mapping
@@ -57,7 +75,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     bool isFavourite = false,
   }) async {
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'pwd_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final itemId = isNew ? _newItemId('pwd') : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final item = VaultItem(
@@ -91,6 +109,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     await loadItems();
+    _requestAutomaticDriveBackup();
   }
 
   /// Saves (creates or updates) an ID Card / Identity item
@@ -109,7 +128,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     bool isFavourite = false,
   }) async {
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'id_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final itemId = isNew ? _newItemId('id') : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final item = VaultItem(
@@ -151,6 +170,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     await loadItems();
+    _requestAutomaticDriveBackup();
   }
 
   /// Encrypts an attached file or photo for an identity item
@@ -184,6 +204,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     String? notes,
     String? documentDate,
     bool isFavourite = false,
+    bool refresh = true,
   }) async {
     final session = _ref.read(vaultSessionProvider);
     final vek = session.vek;
@@ -192,7 +213,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'doc_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final itemId = isNew ? _newItemId('doc') : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     // Encrypt file bytes using derived storage key
@@ -205,6 +226,24 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       originalFileName: originalFileName,
       fileStorageKey: fileStorageKey,
     );
+
+    String? thumbnailPath;
+    if (canMakeThumbnail(extension: stored.fileExtension, mimeType: stored.mimeType)) {
+      final thumb = await makeFileThumbnail(
+        Uint8List.fromList(fileBytes),
+        extension: stored.fileExtension,
+        mimeType: stored.mimeType,
+      );
+      if (thumb != null) {
+        thumbnailPath = (await fileService.encryptAndSave(
+          fileBytes: thumb,
+          originalFileName: 'thumb.png',
+          fileStorageKey: fileStorageKey,
+        ))
+            .relativePath;
+        _thumbnailCache[itemId] = thumb;
+      }
+    }
 
     final sizeStr = stored.fileSize > 1024 * 1024
         ? '${(stored.fileSize / (1024 * 1024)).toStringAsFixed(1)} MB'
@@ -224,6 +263,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       fileSize: stored.fileSize,
       mimeType: stored.mimeType,
       fileExtension: stored.fileExtension,
+      thumbnailPath: thumbnailPath,
     );
 
     final docEntry = DocumentEntry(
@@ -235,6 +275,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       mimeType: stored.mimeType,
       fileExtension: stored.fileExtension,
       notes: notes,
+      thumbnailPath: thumbnailPath,
     );
 
     if (isNew) {
@@ -243,7 +284,102 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       await _repository.updateItem(item, documentEntry: docEntry);
     }
 
-    await loadItems();
+    if (refresh) {
+      await loadItems();
+      _requestAutomaticDriveBackup();
+    }
+  }
+
+  /// Saves several picked files as separate items, one after another.
+  /// [onProgress] receives (done, total). Returns how many were saved.
+  Future<int> saveDocumentItems({
+    required List<({String name, Future<List<int>> Function() read})> files,
+    required VaultCategory category,
+    bool isFavourite = false,
+    void Function(int done, int total)? onProgress,
+  }) async {
+    var saved = 0;
+    try {
+      for (final file in files) {
+        final dot = file.name.lastIndexOf('.');
+        await saveDocumentItem(
+          title: dot > 0 ? file.name.substring(0, dot) : file.name,
+          category: category,
+          originalFileName: file.name,
+          // Read one file at a time so a large batch never sits in memory at once.
+          fileBytes: await file.read(),
+          isFavourite: isFavourite,
+          refresh: false,
+        );
+        saved++;
+        onProgress?.call(saved, files.length);
+      }
+    } finally {
+      await loadItems();
+      if (saved > 0) _requestAutomaticDriveBackup();
+    }
+    return saved;
+  }
+
+  /// Decrypted thumbnails kept in memory while unlocked; cleared on lock.
+  final Map<String, Uint8List> _thumbnailCache = {};
+  static const int _thumbnailCacheLimit = 150;
+  Future<void> _thumbnailQueue = Future.value();
+
+  /// Grid thumbnail for an image or PDF item. Files saved before thumbnails existed get one
+  /// generated (from the full file) on first request; requests run one at a time so a
+  /// screen full of old files never decrypts many large files at once.
+  Future<Uint8List?> getThumbnail(VaultItem item) {
+    final cached = _thumbnailCache[item.id];
+    if (cached != null) return Future.value(cached);
+
+    final result = _thumbnailQueue.then((_) => _loadThumbnail(item));
+    _thumbnailQueue = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
+  Future<Uint8List?> _loadThumbnail(VaultItem item) async {
+    final cached = _thumbnailCache[item.id];
+    if (cached != null) return cached;
+    if (item.filePath == null) return null;
+    // Only images and PDFs have previews; never decrypt other files just to find that out.
+    if (!canMakeThumbnail(extension: item.fileExtension, mimeType: item.mimeType)) return null;
+
+    Uint8List? thumb;
+    final thumbPath = item.thumbnailPath;
+    if (thumbPath != null && thumbPath.isNotEmpty) {
+      try {
+        thumb = await getDecryptedFileBytes(thumbPath);
+      } catch (_) {
+        thumb = null; // missing (e.g. after restore) or unreadable: regenerate below
+      }
+    }
+
+    if (thumb == null) {
+      final session = _ref.read(vaultSessionProvider);
+      final vek = session.vek;
+      if (vek == null) return null;
+      final full = await getDecryptedFileBytes(item.filePath!);
+      thumb = await makeFileThumbnail(full, extension: item.fileExtension, mimeType: item.mimeType);
+      if (thumb == null) return null;
+      final key = await _ref.read(vaultCryptoServiceProvider).deriveFileStorageKey(vek);
+      final stored = await _ref.read(encryptedFileServiceProvider).encryptAndSave(
+            fileBytes: thumb,
+            originalFileName: 'thumb.png',
+            fileStorageKey: key,
+          );
+      final old = item.thumbnailPath;
+      await _repository.setThumbnailPath(item.id, stored.relativePath);
+      if (old != null && old.isNotEmpty) {
+        await _ref.read(encryptedFileServiceProvider).deleteEncryptedFile(old);
+      }
+    }
+
+    if (_thumbnailCache.length >= _thumbnailCacheLimit) {
+      _thumbnailCache.remove(_thumbnailCache.keys.first);
+    }
+    _thumbnailCache[item.id] = thumb;
+    return thumb;
   }
 
   /// Updates document metadata (e.g. title, category, notes, favourite) without re-encrypting the file
@@ -275,10 +411,12 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
       mimeType: existing.mimeType ?? 'application/octet-stream',
       fileExtension: existing.fileExtension ?? '',
       notes: notes ?? existing.details,
+      thumbnailPath: existing.thumbnailPath,
     );
 
     await _repository.updateItem(updatedItem, documentEntry: docEntry);
     await loadItems();
+    _requestAutomaticDriveBackup();
   }
 
   /// Decrypts file contents on demand in memory (zero plaintext file written to disk)
@@ -332,13 +470,13 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     bool isFavourite = false,
   }) async {
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'note_${DateTime.now().millisecondsSinceEpoch}' : id;
+    final itemId = isNew ? _newItemId('note') : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final item = VaultItem(
       id: itemId,
       title: title,
-      subtitle: content.length > 50 ? '${content.substring(0, 50)}...' : content,
+      subtitle: notePreview(content),
       category: VaultCategory.notes,
       details: content,
       subcategory: category ?? 'General',
@@ -364,6 +502,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     await loadItems();
+    _requestAutomaticDriveBackup();
   }
 
   /// Saves (creates or updates) a Contact item
@@ -386,7 +525,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     bool refresh = true,
   }) async {
     final isNew = id == null || id.isEmpty;
-    final itemId = isNew ? 'cnt_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(10000)}' : id;
+    final itemId = isNew ? _newItemId('cnt') : id;
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final subtitle = [
@@ -442,6 +581,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
 
     if (refresh) {
       await loadItems();
+      _requestAutomaticDriveBackup();
     }
   }
 
@@ -474,9 +614,9 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
   static String _cleanVcfValue(String rawValue, String keyOrParams) {
     String val = rawValue;
     final upperKey = keyOrParams.toUpperCase();
-    final isQP = upperKey.contains('QUOTED-PRINTABLE') ||
-        upperKey.contains('ENCODING=QP') ||
-        RegExp(r'=[0-9A-Fa-f]{2}').hasMatch(val);
+    // Some exporters omit the ENCODING parameter, so also accept a value that contains a
+    // quoted-printable UTF-8 sequence (=C3=A9 ...). A lone "=12" in ordinary text is not one.
+    final isQP = _isQuotedPrintableParams(upperKey) || _qpUtf8Sequence.hasMatch(val);
 
     if (isQP) {
       val = _decodeQuotedPrintable(val);
@@ -497,48 +637,22 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     return val;
   }
 
-  /// Bulk imports contacts from a VCF string, parsing names, phones, emails, and base64 photos,
-  /// sorting them in ascending alphabetical order by Contact Name, and saving to vault.
-  Future<int> importContactsFromVcf(String vcfContent) async {
-    final session = _ref.read(vaultSessionProvider);
-    final vek = session.vek;
-    if (vek == null) {
-      throw StateError('Vault is locked. Cannot import contacts.');
-    }
+  /// Parses every contact in a VCF file (vCard 2.1/3.0/4.0), sorted by name ascending.
+  /// Pure, so the parser can be tested without a vault.
+  static List<ParsedVcfContact> parseVcfContacts(String vcfContent) {
+    if (vcfContent.trim().isEmpty) return const [];
 
-    if (vcfContent.trim().isEmpty) return 0;
-
-    // 1. Normalize line endings and strip BOM
-    var normalized = vcfContent.replaceFirst('\uFEFF', '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-
-    // 2. Unfold multiline Quoted-Printable lines that end with '='
-    normalized = normalized.replaceAll(RegExp(r'=+\n'), '');
-
-    // 3. Unfold RFC 2425/2426/6350 whitespace continuation lines (space or tab)
-    normalized = normalized.replaceAll(RegExp(r'\n[ \t]'), '');
-
-    // 4. Extract individual vCards
-    final cardRegex = RegExp(r'BEGIN:VCARD[\s\S]*?END:VCARD', caseSensitive: false);
-    var cardMatches = cardRegex.allMatches(normalized).map((m) => m.group(0)!).toList();
-
-    // Fallback if cards lack END:VCARD
-    final beginCount = RegExp(r'BEGIN:VCARD', caseSensitive: false).allMatches(normalized).length;
-    if (cardMatches.length < beginCount) {
-      final blocks = normalized.split(RegExp(r'BEGIN:VCARD', caseSensitive: false));
-      cardMatches = blocks
-          .where((b) => b.trim().isNotEmpty)
-          .map((b) => 'BEGIN:VCARD$b')
-          .toList();
-    }
+    // Normalize line endings and strip BOM, then unfold into logical property lines.
+    final normalized = vcfContent.replaceFirst('\uFEFF', '').replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final cardMatches = _splitVcards(_unfoldVcfLines(normalized));
 
     if (cardMatches.isEmpty) {
-      return 0;
+      return const [];
     }
 
-    final parsedList = <_ParsedVcfContact>[];
+    final parsedList = <ParsedVcfContact>[];
 
-    for (final cardText in cardMatches) {
-      final lines = cardText.split('\n');
+    for (final lines in cardMatches) {
 
       String formattedName = '';
       String structuredName = '';
@@ -651,23 +765,54 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
         continue;
       }
 
-      parsedList.add(_ParsedVcfContact(
+      parsedList.add(ParsedVcfContact(
         fullName: contactName,
         phoneNumber: phoneNumber,
         email: email,
+        company: organization.isEmpty ? null : organization,
         photoBytes: photoBytes,
       ));
     }
 
     if (parsedList.isEmpty) {
-      return 0;
+      return const [];
     }
 
     // Sort in ascending alphabetical order by Contact Name
     parsedList.sort((a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
 
+    return parsedList;
+  }
+
+  /// Bulk imports contacts from a VCF string, parsing names, phones, emails, organisations and
+  /// base64 photos, sorting them in ascending alphabetical order by Contact Name, and saving
+  /// them to the vault. Contacts already in the vault (same name and phone) are skipped.
+  Future<({int imported, int duplicates})> importContactsFromVcf(String vcfContent) async {
+    final session = _ref.read(vaultSessionProvider);
+    final vek = session.vek;
+    if (vek == null) {
+      throw StateError('Vault is locked. Cannot import contacts.');
+    }
+
+    final parsedList = parseVcfContacts(vcfContent);
+    if (parsedList.isEmpty) return (imported: 0, duplicates: 0);
+
+    // Skip contacts already in the vault (same name and phone), so importing the same file
+    // twice does not create duplicates. Also dedupes repeats within the file.
+    String identity(String name, String? phone) =>
+        '${name.trim().toLowerCase()}|${(phone ?? '').replaceAll(RegExp(r'[^0-9+]'), '')}';
+    final known = {
+      for (final item in state.where((i) => i.category == VaultCategory.contacts))
+        identity(item.title, item.phoneNumber),
+    };
+
     int count = 0;
+    int duplicates = 0;
     for (final contact in parsedList) {
+      if (!known.add(identity(contact.fullName, contact.phoneNumber))) {
+        duplicates++;
+        continue;
+      }
       String? attachmentPath;
       if (contact.photoBytes != null && contact.photoBytes!.isNotEmpty) {
         try {
@@ -683,6 +828,7 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
         fullName: contact.fullName,
         phoneNumber: contact.phoneNumber,
         email: contact.email,
+        company: contact.company,
         attachmentPath: attachmentPath,
         refresh: false,
       );
@@ -690,55 +836,105 @@ class VaultItemsNotifier extends StateNotifier<List<VaultItem>> {
     }
 
     await loadItems();
-    return count;
+    if (count > 0) _requestAutomaticDriveBackup();
+    return (imported: count, duplicates: duplicates);
   }
 
-  /// Adds a generic vault item
-  Future<void> addItem(VaultItem item) async {
-    try {
-      await _repository.insertItem(item);
-      await loadItems();
-    } catch (_) {
-      state = [item, ...state];
+  static final RegExp _qpUtf8Sequence = RegExp(r'=[C-Fc-f][0-9A-Fa-f]=[89ABab][0-9A-Fa-f]');
+
+  static bool _isQuotedPrintableParams(String upperParams) =>
+      upperParams.contains('QUOTED-PRINTABLE') || upperParams.contains('ENCODING=QP');
+
+  /// Joins folded lines into logical property lines:
+  /// - RFC 2425/6350 folding: a line starting with a space or tab continues the previous one.
+  /// - vCard 2.1 quoted-printable soft breaks: a QUOTED-PRINTABLE property line ending in "="
+  ///   continues on the next line. Only those properties are joined, never e.g. a base64
+  ///   photo whose padding happens to end a line with "=".
+  static List<String> _unfoldVcfLines(String text) {
+    final out = <String>[];
+    var qpOpen = false; // the previous logical line is quoted-printable and ended with "="
+    for (final raw in text.split('\n')) {
+      if (out.isNotEmpty && qpOpen) {
+        // Soft break: drop the "=" and keep the next line as-is (a leading space is data).
+        final last = out.last;
+        out[out.length - 1] = last.substring(0, last.length - 1) + raw;
+      } else if (out.isNotEmpty && (raw.startsWith(' ') || raw.startsWith('\t'))) {
+        out[out.length - 1] += raw.substring(1);
+      } else {
+        out.add(raw);
+      }
+      final line = out.last;
+      final colon = line.indexOf(':');
+      qpOpen = colon > 0 &&
+          line.endsWith('=') &&
+          _isQuotedPrintableParams(line.substring(0, colon).toUpperCase());
     }
+    return out;
   }
 
-  /// Toggles an item's favourite status
-  Future<void> toggleFavourite(String id) async {
+  /// Groups logical lines into cards. A BEGIN:VCARD always starts a new card, so a card
+  /// missing its END:VCARD does not swallow the next one.
+  static List<List<String>> _splitVcards(List<String> lines) {
+    final cards = <List<String>>[];
+    List<String>? current;
+    for (final line in lines) {
+      final upper = line.trim().toUpperCase();
+      if (upper == 'BEGIN:VCARD') {
+        if (current != null) cards.add(current);
+        current = [line];
+      } else if (upper == 'END:VCARD') {
+        if (current != null) cards.add([...current, line]);
+        current = null;
+      } else {
+        current?.add(line);
+      }
+    }
+    if (current != null) cards.add(current);
+    return cards;
+  }
+
+  /// Toggles an item's favourite status. Returns false if the database write failed;
+  /// state is then reloaded from the database so the UI never shows an unsaved change.
+  Future<bool> toggleFavourite(String id) async {
     try {
       await _repository.toggleFavourite(id);
       await loadItems();
+      _requestAutomaticDriveBackup();
+      return true;
     } catch (_) {
-      state = state.map((item) {
-        if (item.id == id) {
-          return item.copyWith(isFavourite: !item.isFavourite);
-        }
-        return item;
-      }).toList();
+      await loadItems();
+      return false;
     }
   }
 
-  /// Deletes an item from the encrypted database
-  Future<void> removeItem(String id) async {
+  /// Deletes an item from the encrypted database. Returns false if the delete failed.
+  Future<bool> removeItem(String id) async {
     try {
       await _repository.deleteItem(id);
       await loadItems();
+      _requestAutomaticDriveBackup();
+      return true;
     } catch (_) {
-      state = state.where((item) => item.id != id).toList();
+      await loadItems();
+      return false;
     }
   }
 
-  /// Deletes multiple items from the encrypted database in bulk
-  Future<void> removeItems(Iterable<String> ids) async {
+  /// Deletes multiple items from the encrypted database in bulk.
+  /// Returns false if any delete failed; state reflects what was actually deleted.
+  Future<bool> removeItems(Iterable<String> ids) async {
     final idSet = ids.toSet();
-    if (idSet.isEmpty) return;
+    if (idSet.isEmpty) return true;
     try {
       for (final id in idSet) {
         await _repository.deleteItem(id);
       }
       await loadItems();
+      _requestAutomaticDriveBackup();
+      return true;
     } catch (_) {
-      state = state.where((item) => !idSet.contains(item.id)).toList();
+      await loadItems();
+      return false;
     }
   }
 }
@@ -776,7 +972,7 @@ final categoryCountsProvider = Provider<Map<VaultCategory, int>>((ref) {
 /// Recent searches list
 class RecentSearchesNotifier extends StateNotifier<List<String>> {
   RecentSearchesNotifier()
-      : super(['google', 'passport', 'bank', 'insurance', 'office id']);
+      : super(const []);
 
   void addSearch(String query) {
     if (query.trim().isEmpty) return;
@@ -793,16 +989,19 @@ final recentSearchesProvider =
   return RecentSearchesNotifier();
 });
 
-class _ParsedVcfContact {
+/// One contact read from a VCF file.
+class ParsedVcfContact {
   final String fullName;
   final String phoneNumber;
   final String? email;
+  final String? company;
   final Uint8List? photoBytes;
 
-  const _ParsedVcfContact({
+  const ParsedVcfContact({
     required this.fullName,
     required this.phoneNumber,
     this.email,
+    this.company,
     this.photoBytes,
   });
 }

@@ -6,6 +6,8 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/clipboard_service.dart';
 import '../../../../core/security/password_generator.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/letter_avatar.dart';
+import '../../../../shared/widgets/detail_actions.dart';
 import '../../data/vault_item_model.dart';
 
 class PasswordDetailsScreen extends ConsumerStatefulWidget {
@@ -28,18 +30,18 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Delete Password?',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}" from your vault? This action cannot be undone.',
-          style: const TextStyle(color: AppColors.textPrimaryNavy),
+          style: TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -55,8 +57,17 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.title} deleted from vault'),
@@ -86,9 +97,9 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.lock_clock_outlined, size: 48, color: AppColors.textMutedNavy),
+              Icon(Icons.lock_clock_outlined, size: 48, color: AppColors.textMutedNavy),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Password record not found or vault is locked',
                 style: TextStyle(color: AppColors.textMutedNavy),
               ),
@@ -114,7 +125,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'Password Details',
           style: TextStyle(
             color: AppColors.textPrimaryNavy,
@@ -129,8 +140,16 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
               color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
             ),
             tooltip: item.isFavourite ? 'Remove from Favourites' : 'Add to Favourites',
-            onPressed: () {
-              ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+            onPressed: () async {
+              final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              if (!saved && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not update favourite. Please try again.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
           ),
           const SizedBox(width: 8),
@@ -144,28 +163,11 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
             Center(
               child: Column(
                 children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withAlpha(25),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Center(
-                      child: Text(
-                        item.title.isNotEmpty ? item.title[0].toUpperCase() : 'P',
-                        style: const TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ),
-                  ),
+                  LetterAvatar(name: item.title, size: 64),
                   const SizedBox(height: 10),
                   Text(
                     item.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimaryNavy,
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -174,7 +176,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                   const SizedBox(height: 2),
                   Text(
                     item.subcategory ?? 'Website',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textMutedNavy,
                       fontSize: 13,
                     ),
@@ -203,13 +205,11 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                               )
                           : null,
                     ),
-                    const Divider(color: AppColors.border, height: 24),
+                    Divider(color: AppColors.border, height: 24),
                     // Username / Email
                     _buildField(
                       label: 'Username / Email',
-                      value: (item.username != null && item.username!.isNotEmpty)
-                          ? item.username!
-                          : item.subtitle,
+                      value: (item.username != null && item.username!.isNotEmpty) ? item.username! : item.subtitle,
                       icon: Icons.person_outline_rounded,
                       onCopy: (item.username != null && item.username!.isNotEmpty)
                           ? () => ClipboardService.copyPublic(
@@ -219,18 +219,18 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                               )
                           : null,
                     ),
-                    const Divider(color: AppColors.border, height: 24),
+                    Divider(color: AppColors.border, height: 24),
                     // Password Field with Eye Toggle and Auto-Clear Copy
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy, size: 20),
+                        Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy, size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Password',
                                 style: TextStyle(
                                   color: AppColors.textMutedNavy,
@@ -241,7 +241,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 _showPassword ? passwordText : '••••••••••••••••',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppColors.textPrimaryNavy,
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
@@ -277,7 +277,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Strength',
                           style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
                         ),
@@ -315,37 +315,10 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
             ),
             const SizedBox(height: AppSpacing.xl),
             // Edit and Delete Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      context.push('/edit-password/${item.id}');
-                    },
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.md),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _confirmDelete(context, item),
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
-                    label: const Text('Delete', style: TextStyle(color: AppColors.error)),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.error),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
-              ],
+            DetailActions(
+              onDelete: () => _confirmDelete(context, item),
+              onEdit: () => context.push('/edit-password/${item.id}'),
+              editLabel: 'Edit',
             ),
             const SizedBox(height: AppSpacing.xl),
           ],
@@ -371,7 +344,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textMutedNavy,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -380,7 +353,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
               const SizedBox(height: 4),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimaryNavy,
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -405,7 +378,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textMutedNavy,
             fontSize: 13,
             fontWeight: FontWeight.w500,
@@ -416,7 +389,7 @@ class _PasswordDetailsScreenState extends ConsumerState<PasswordDetailsScreen> {
           child: Text(
             value,
             textAlign: TextAlign.end,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimaryNavy,
               fontSize: 13,
               fontWeight: FontWeight.w600,

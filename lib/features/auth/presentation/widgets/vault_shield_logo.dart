@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../../core/brand/vault_mark.dart';
 import '../../../../core/constants/app_colors.dart';
 
+/// The MyVault logo (shield and keyhole, see [VaultMarkPainter]) on its brand tile, with a
+/// soft halo. Matches the launcher icon.
 class VaultShieldLogo extends StatelessWidget {
   final double size;
 
@@ -31,11 +34,7 @@ class VaultShieldLogo extends StatelessWidget {
           height: size * 0.72,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(size * 0.22),
-            gradient: const LinearGradient(
-              colors: [Color(0xFF2196F3), Color(0xFF0D47A1)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: VaultMarkPainter.brandGradient,
             boxShadow: [
               BoxShadow(
                 color: AppColors.primaryDark.withAlpha(60),
@@ -44,10 +43,8 @@ class VaultShieldLogo extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(
-            Icons.lock_rounded,
-            color: Colors.white,
-            size: size * 0.38,
+          child: CustomPaint(
+            painter: VaultMarkPainter(markScale: 0.62, shadow: size >= 48),
           ),
         ),
       ),

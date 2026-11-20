@@ -10,6 +10,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../../auth/domain/vault_auth_notifier.dart';
+import '../../../../core/ui/user_message.dart';
+import '../../../../shared/widgets/detail_actions.dart';
 import '../../data/vault_item_model.dart';
 
 class DocumentDetailsScreen extends ConsumerStatefulWidget {
@@ -46,7 +48,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     super.dispose();
   }
 
-
   void _cleanupTempPreview() {
     if (_tempPreviewFile != null) {
       try {
@@ -67,13 +68,6 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     final filePath = item.filePath;
     if (filePath == null || filePath.isEmpty) return;
 
-    if (filePath.startsWith('seed_')) {
-      setState(() {
-        _previewError = 'Sample placeholder. Real uploaded documents and photos are secured and previewed on demand.';
-      });
-      return;
-    }
-
     setState(() {
       _isLoadingPreview = true;
       _previewError = null;
@@ -87,14 +81,17 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         _previewText = utf8.decode(bytes, allowMalformed: true);
       }
 
+      if (!mounted) return;
       setState(() {
         _previewBytes = bytes;
         _isLoadingPreview = false;
       });
-    } catch (e) {
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
         _isLoadingPreview = false;
-        _previewError = 'Could not preview file: ${e.toString()}';
+        _previewError = 'This file could not be opened for preview. '
+            'You can still save it to your phone.';
       });
     }
   }
@@ -104,18 +101,9 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     final filePath = item.filePath;
     if (filePath == null || filePath.isEmpty) return;
 
-    if (filePath.startsWith('seed_')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This is a sample placeholder. Real files can be previewed.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
     final ext = item.fileExtension?.toLowerCase() ?? '';
-    final isImage = ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
+    final isImage =
+        ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
 
     // 1. Image Preview: Fullscreen Interactive Pinch-to-Zoom Viewer
     if (isImage) {
@@ -124,17 +112,17 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         setState(() => _isLoadingPreview = true);
         try {
           bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
+          if (!mounted) return;
           setState(() {
             _previewBytes = bytes;
             _isLoadingPreview = false;
           });
-        } catch (e) {
+        } catch (_) {
+          if (!mounted) return;
           setState(() => _isLoadingPreview = false);
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Could not load image: $e'), backgroundColor: AppColors.error),
-            );
-          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('This image could not be opened.'), backgroundColor: AppColors.error),
+          );
           return;
         }
       }
@@ -160,7 +148,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             actions: [
               IconButton(
                 icon: const Icon(Icons.download_rounded, color: Colors.white),
-                tooltip: 'Download to Device',
+                tooltip: _saveLabel(item),
                 onPressed: () => _downloadFile(item),
               ),
             ],
@@ -210,13 +198,14 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         setState(() => _isLoadingPreview = true);
         try {
           bytes = await ref.read(vaultItemsProvider.notifier).getDecryptedFileBytes(filePath);
+          if (!mounted) return;
           setState(() {
             _previewBytes = bytes;
             _previewText = utf8.decode(bytes!, allowMalformed: true);
             _isLoadingPreview = false;
           });
-        } catch (e) {
-          setState(() => _isLoadingPreview = false);
+        } catch (_) {
+          if (mounted) setState(() => _isLoadingPreview = false);
           return;
         }
       }
@@ -262,7 +251,8 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       final fileKey = await crypto.deriveFileStorageKey(vek);
       final fileService = ref.read(encryptedFileServiceProvider);
 
-      final defaultName = item.fileName ?? 'preview_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : ".pdf"}';
+      final defaultName =
+          item.fileName ?? 'preview_${DateTime.now().millisecondsSinceEpoch}${ext.isNotEmpty ? ext : ".pdf"}';
       final tempFile = await fileService.createTemporaryPreviewFile(
         relativePath: filePath,
         fileName: defaultName,
@@ -270,6 +260,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       );
       _tempPreviewFile = tempFile;
 
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final result = await OpenFilex.open(tempFile.path);
       if (result.type != ResultType.done && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -277,7 +268,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             content: Text(
               result.message.isNotEmpty && result.message != 'done'
                   ? result.message
-                  : 'No default viewer found. You can tap Download to save and open it.',
+                  : 'No default viewer found. Use Save to keep a copy on your phone.',
             ),
             backgroundColor: AppColors.primary,
           ),
@@ -286,26 +277,19 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Preview error: $e'), backgroundColor: AppColors.error),
+          SnackBar(content: Text('Could not open the file. ${userMessage(e)}'), backgroundColor: AppColors.error),
         );
       }
     }
   }
 
+  /// Photos export as images and documents as documents.
+  static String _saveLabel(VaultItem item) => item.category == VaultCategory.photos ? 'Save Image' : 'Save Document';
+
   Future<void> _downloadFile(VaultItem item) async {
     if (_isDownloading) return;
     final filePath = item.filePath;
     if (filePath == null || filePath.isEmpty) return;
-
-    if (filePath.startsWith('seed_')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('This is a sample placeholder. Real uploaded documents can be downloaded.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
 
     setState(() => _isDownloading = true);
 
@@ -316,8 +300,9 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           : '';
       final defaultFileName = item.fileName ?? '${item.title}$ext';
 
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final savedPath = await FilePicker.saveFile(
-        dialogTitle: 'Download Document',
+        dialogTitle: _saveLabel(item),
         fileName: defaultFileName,
         bytes: bytes,
       );
@@ -325,7 +310,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       if (savedPath != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Downloaded: $defaultFileName'),
+            content: Text('Saved: $defaultFileName'),
             backgroundColor: AppColors.success,
           ),
         );
@@ -334,7 +319,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Download failed: $e'),
+            content: Text('Could not save the file. ${userMessage(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -351,18 +336,18 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Delete Document?',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}"? The file will be securely removed from app storage.',
-          style: const TextStyle(color: AppColors.textPrimaryNavy),
+          style: TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -378,8 +363,17 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.title} permanently deleted'),
@@ -403,11 +397,11 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       return Container(
         height: 220,
         alignment: Alignment.center,
-        child: const Column(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(height: 12),
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 12),
             Text(
               'Loading preview...',
               style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
@@ -422,7 +416,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         padding: const EdgeInsets.all(24),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           border: const Border(left: BorderSide(color: Colors.amber, width: 4)),
         ),
@@ -434,7 +428,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             Text(
               _previewError!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
+              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
             ),
           ],
         ),
@@ -442,7 +436,8 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
     }
 
     final ext = item.fileExtension?.toLowerCase() ?? '';
-    final isImage = ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
+    final isImage =
+        ext == '.jpg' || ext == '.jpeg' || ext == '.png' || ext == '.webp' || ext == '.gif' || ext == '.bmp';
 
     if (isImage && _previewBytes != null) {
       return InkWell(
@@ -499,7 +494,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           padding: const EdgeInsets.all(16),
           constraints: const BoxConstraints(maxHeight: 250),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppColors.border),
           ),
@@ -510,7 +505,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                 child: SingleChildScrollView(
                   child: Text(
                     _previewText!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 13,
                       color: AppColors.textPrimaryNavy,
@@ -524,7 +519,8 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                 children: [
                   Icon(Icons.open_in_full_rounded, size: 14, color: AppColors.primary),
                   SizedBox(width: 4),
-                  Text('Tap to expand', style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold)),
+                  Text('Tap to expand',
+                      style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold)),
                 ],
               ),
             ],
@@ -540,7 +536,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: AppColors.border),
         ),
@@ -548,20 +544,20 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: AppColors.categoryDocumentsBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 ext == '.pdf' ? Icons.picture_as_pdf_rounded : Icons.insert_drive_file_rounded,
                 size: 40,
-                color: ext == '.pdf' ? const Color(0xFFE53935) : AppColors.primary,
+                color: ext == '.pdf' ? AppColors.categoryDocuments : AppColors.primary,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               item.fileName ?? item.title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 16,
                 color: AppColors.textPrimaryNavy,
@@ -571,7 +567,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
             const SizedBox(height: 4),
             Text(
               _formatFileSize(item.fileSize),
-              style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
+              style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
             ),
             const SizedBox(height: 14),
             Container(
@@ -617,9 +613,9 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.folder_off_outlined, size: 48, color: AppColors.textMutedNavy),
+              Icon(Icons.folder_off_outlined, size: 48, color: AppColors.textMutedNavy),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'Document not found or vault is locked',
                 style: TextStyle(color: AppColors.textMutedNavy),
               ),
@@ -645,43 +641,35 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         ),
         title: Text(
           item.category == VaultCategory.photos ? 'Photo Details' : 'Document Details',
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
             fontWeight: FontWeight.bold,
           ),
         ),
+        // Preview and Save are the prominent buttons on the page (and in the menu), so the
+        // bar keeps only the favourite star and the menu, leaving room for the title.
         actions: [
-          // 1-Tap Preview in Top Bar
-          IconButton(
-            icon: const Icon(Icons.visibility_rounded, color: AppColors.primary, size: 24),
-            tooltip: 'Preview',
-            onPressed: () => _openFullscreenPreview(item),
-          ),
-          // 1-Tap Download in Top Bar
-          IconButton(
-            icon: _isDownloading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                  )
-                : const Icon(Icons.download_rounded, color: AppColors.primary, size: 24),
-            tooltip: 'Download to Device',
-            onPressed: _isDownloading ? null : () => _downloadFile(item),
-          ),
           IconButton(
             icon: Icon(
               item.isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
               color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
               size: 24,
             ),
-            onPressed: () {
-              ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+            onPressed: () async {
+              final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              if (!saved && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not update favourite. Please try again.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
+            icon: Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
             onSelected: (val) {
               if (val == 'preview') {
                 _openFullscreenPreview(item);
@@ -704,13 +692,13 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                   ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'download',
                 child: Row(
                   children: [
-                    Icon(Icons.download_rounded, size: 18, color: AppColors.primary),
-                    SizedBox(width: 8),
-                    Text('Download to Device'),
+                    const Icon(Icons.download_rounded, size: 18, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Text(_saveLabel(item)),
                   ],
                 ),
               ),
@@ -785,7 +773,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                             )
                           : const Icon(Icons.download_rounded, size: 20),
                       label: Text(
-                        _isDownloading ? 'Saving...' : 'Download',
+                        _isDownloading ? 'Saving...' : _saveLabel(item),
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
                       onPressed: _isDownloading ? null : () => _downloadFile(item),
@@ -800,7 +788,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -822,37 +810,10 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
               const SizedBox(height: AppSpacing.lg),
 
               // Action Buttons: Delete & Edit
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                        side: const BorderSide(color: AppColors.error),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                      label: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => _confirmDelete(context, item),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryLight,
-                        foregroundColor: AppColors.primary,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      label: const Text('Edit Details', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => context.push('/edit-document/${item.id}'),
-                    ),
-                  ),
-                ],
+              DetailActions(
+                onDelete: () => _confirmDelete(context, item),
+                onEdit: () => context.push('/edit-document/${item.id}'),
+                editLabel: 'Edit',
               ),
               const SizedBox(height: AppSpacing.xl),
             ],
@@ -870,7 +831,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
           width: 130,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textMutedNavy,
               fontSize: 13,
             ),
@@ -879,7 +840,7 @@ class _DocumentDetailsScreenState extends ConsumerState<DocumentDetailsScreen> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimaryNavy,
               fontSize: 14,
               fontWeight: FontWeight.w600,

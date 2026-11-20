@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../../features/auth/domain/vault_auth_notifier.dart';
+import '../constants/app_info.dart';
 import '../database/vault_database.dart';
 import '../security/vault_crypto_service.dart';
 import '../storage/encrypted_file_service.dart';
@@ -30,6 +32,18 @@ class InvalidBackupPassphraseException extends BackupException {
 
 class BackupCorruptedAttachmentException extends BackupException {
   const BackupCorruptedAttachmentException(super.message);
+}
+
+/// Some attachments could not be read, so a backup would silently be missing them.
+/// Pass `allowMissingAttachments: true` to create the backup anyway.
+class BackupIncompleteException extends BackupException {
+  final List<String> missingFiles;
+  const BackupIncompleteException(super.message, this.missingFiles);
+}
+
+/// The vault is too large to back up (and restore) in one piece on this device.
+class BackupTooLargeException extends BackupException {
+  const BackupTooLargeException(super.message);
 }
 
 class BackupInspectResult {
@@ -167,7 +181,15 @@ class RestoreResult {
 /// Service providing standalone portable encrypted backup and authenticated restoration
 class VaultBackupService {
   static const String containerMagic = 'MYVAULT_B_V1'; // 12 bytes
-  static const int currentBackupVersion = 1;
+
+  /// Container layout by version (both remain restorable):
+  /// - v1: magic | header length | header (holds the GCM tag) | ciphertext.
+  ///       The header (item counts, dates, KDF settings) is not authenticated.
+  /// - v2: magic | header length | header | ciphertext | GCM tag (16 bytes).
+  ///       The exact header bytes are the GCM associated data, so any change to them
+  ///       makes decryption fail.
+  static const int currentBackupVersion = 2;
+  static const int _tagLength = 16;
 
   // Strict Argon2id resource bounds to prevent Denial-of-Service / Memory exhaustion attacks
   static const int minArgon2Memory = 8192; // 8 MiB minimum
@@ -176,6 +198,11 @@ class VaultBackupService {
   static const int maxArgon2Iterations = 10;
   static const int minArgon2Parallelism = 1;
   static const int maxArgon2Parallelism = 4;
+
+  /// Largest backup container created or restored. Backup and restore hold the whole
+  /// container in memory, and every backup made must also be restorable, so both sides
+  /// share this limit.
+  static const int maxBackupBytes = 512 * 1024 * 1024;
 
   final VaultDatabase _vaultDb;
   final EncryptedFileService _fileService;
@@ -189,11 +216,22 @@ class VaultBackupService {
         _fileService = fileService,
         _cryptoService = cryptoService;
 
-  /// Creates a single, portable, authenticated encrypted backup file (.myvault)
+  /// Number of items in the vault.
+  Future<int> itemCount() async =>
+      Sqflite.firstIntValue(await _vaultDb.database.rawQuery('SELECT COUNT(*) FROM vault_items')) ?? 0;
+
+  static String _mb(int bytes) => '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+
+  /// Creates a single, portable, authenticated encrypted backup file (.myvault).
+  ///
+  /// Throws [BackupIncompleteException] if any attachment cannot be read, unless
+  /// [allowMissingAttachments] is true, and [BackupTooLargeException] if the result would
+  /// exceed [maxBackupBytes].
   Future<Uint8List> createBackupBytes({
     required String passphrase,
     required Uint8List vek,
     void Function(double progress, String status)? onProgress,
+    bool allowMissingAttachments = false,
   }) async {
     if (passphrase.trim().length < 8) {
       throw const BackupException('Backup passphrase must be at least 8 characters long.');
@@ -214,65 +252,89 @@ class VaultBackupService {
     final tags = await db.query('tags');
     final itemTags = await db.query('item_tags');
 
+    // Refuse before decrypting anything if the result could not be restored later.
+    // Attachments are base64-encoded in the payload (4/3 of their size).
+    var estimatedBytes = await _vaultDb.fileSizeBytes();
+    final estimatedPaths = <String>{};
+    for (final (rows, column) in [
+      (documentEntries, 'file_path'),
+      (identityEntries, 'attachment_path'),
+      (contacts, 'attachment_path'),
+    ]) {
+      for (final row in rows) {
+        final path = row[column] as String?;
+        if (path == null || path.isEmpty || !estimatedPaths.add(path)) continue;
+        estimatedBytes += (await _fileService.encryptedFileSize(path)) * 4 ~/ 3;
+      }
+    }
+    if (estimatedBytes > maxBackupBytes) {
+      throw BackupTooLargeException(
+        'Your vault (about ${_mb(estimatedBytes)}) is larger than the ${_mb(maxBackupBytes)} '
+        'backup limit. Remove some large documents or photos, then try again.',
+      );
+    }
+
     onProgress?.call(0.3, 'Reading and decrypting file attachments...');
     final fileStorageKey = await _cryptoService.deriveFileStorageKey(vek);
     final filesList = <BackupFileAttachment>[];
+    final missingFiles = <String>[];
     final sha256Algo = Sha256();
 
-    // 1. Collect from document_entries
-    for (final doc in documentEntries) {
-      final path = doc['file_path'] as String?;
-      final name = (doc['file_name'] as String?) ?? 'file';
-      final mime = (doc['mime_type'] as String?) ?? 'application/octet-stream';
-      if (path != null && path.isNotEmpty) {
-        try {
-          final decryptedBytes = await _fileService.decrypt(
-            relativePath: path,
-            fileStorageKey: fileStorageKey,
-          );
-          final hash = await sha256Algo.hash(decryptedBytes);
-          final hashHex = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final collectedPaths = <String>{};
 
-          filesList.add(BackupFileAttachment(
-            fileName: p.basename(name),
-            relativePath: p.basename(path),
-            mimeType: mime,
-            size: decryptedBytes.length,
-            sha256: hashHex,
-            dataB64: base64Encode(decryptedBytes),
-          ));
-        } catch (_) {
-          // Continue if missing attachment file
-        }
+    Future<void> collect(String? path, String fileName, String mimeType) async {
+      if (path == null || path.isEmpty || !collectedPaths.add(path)) return;
+      try {
+        final decryptedBytes = await _fileService.decrypt(
+          relativePath: path,
+          fileStorageKey: fileStorageKey,
+        );
+        final hash = await sha256Algo.hash(decryptedBytes);
+        final hashHex = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+        filesList.add(BackupFileAttachment(
+          fileName: p.basename(fileName),
+          relativePath: p.basename(path),
+          mimeType: mimeType,
+          size: decryptedBytes.length,
+          sha256: hashHex,
+          dataB64: base64Encode(decryptedBytes),
+        ));
+      } catch (_) {
+        missingFiles.add(p.basename(fileName));
       }
     }
 
-    // 2. Collect from identity_entries attachment_path
+    // Document files, ID card scans, and contact photos
+    for (final doc in documentEntries) {
+      await collect(
+        doc['file_path'] as String?,
+        (doc['file_name'] as String?) ?? 'file',
+        (doc['mime_type'] as String?) ?? 'application/octet-stream',
+      );
+    }
     for (final idn in identityEntries) {
       final path = idn['attachment_path'] as String?;
-      if (path != null && path.isNotEmpty) {
-        try {
-          final decryptedBytes = await _fileService.decrypt(
-            relativePath: path,
-            fileStorageKey: fileStorageKey,
-          );
-          final hash = await sha256Algo.hash(decryptedBytes);
-          final hashHex = hash.bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+      await collect(path, path ?? 'file', 'application/octet-stream');
+    }
+    for (final contact in contacts) {
+      final path = contact['attachment_path'] as String?;
+      await collect(path, path ?? 'photo', 'image/jpeg');
+    }
 
-          filesList.add(BackupFileAttachment(
-            fileName: p.basename(path),
-            relativePath: p.basename(path),
-            mimeType: 'application/octet-stream',
-            size: decryptedBytes.length,
-            sha256: hashHex,
-            dataB64: base64Encode(decryptedBytes),
-          ));
-        } catch (_) {}
-      }
+    if (missingFiles.isNotEmpty && !allowMissingAttachments) {
+      final shown = missingFiles.take(5).join(', ');
+      final more = missingFiles.length > 5 ? ' and ${missingFiles.length - 5} more' : '';
+      throw BackupIncompleteException(
+        '${missingFiles.length} attachment${missingFiles.length == 1 ? '' : 's'} could not be read '
+        'and would be missing from the backup: $shown$more.',
+        missingFiles,
+      );
     }
 
     onProgress?.call(0.6, 'Constructing backup payload...');
-    final payload = BackupPayload(
+    // Encoded straight to UTF-8 bytes: no intermediate String copy of the whole vault.
+    Uint8List? payloadBytes = _encodeJsonUtf8(BackupPayload(
       version: currentBackupVersion,
       timestamp: DateTime.now().millisecondsSinceEpoch,
       vaultItems: vaultItems,
@@ -284,10 +346,9 @@ class VaultBackupService {
       tags: tags,
       itemTags: itemTags,
       files: filesList,
-    );
-
-    final payloadJsonStr = jsonEncode(payload.toMap());
-    final payloadBytes = utf8.encode(payloadJsonStr);
+    ).toMap());
+    final fileCount = filesList.length;
+    filesList.clear(); // drop the base64 copies before encrypting
 
     onProgress?.call(0.75, 'Deriving backup key with Argon2id...');
     final salt = _cryptoService.generateSalt(32);
@@ -301,18 +362,10 @@ class VaultBackupService {
       parallelism: VaultCryptoService.argon2Parallelism,
     );
 
-    onProgress?.call(0.85, 'Encrypting backup with AES-256-GCM...');
-    final secretBox = await _cryptoService.encryptBackupPayload(
-      plaintext: payloadBytes,
-      backupKey: bek,
-      nonce: nonce,
-    );
-
-    onProgress?.call(0.95, 'Packaging portable container...');
     final headerMap = {
       'format': 'MYVAULT_BACKUP',
       'version': currentBackupVersion,
-      'app_version': '1.0.0',
+      'app_version': AppInfo.version,
       'created_at': DateTime.now().millisecondsSinceEpoch,
       'kdf': 'Argon2id',
       'kdf_params': {
@@ -324,22 +377,44 @@ class VaultBackupService {
       },
       'cipher': 'AES-256-GCM',
       'nonce': base64Encode(nonce),
-      'mac': base64Encode(secretBox.mac.bytes),
       'item_count': vaultItems.length,
-      'file_count': filesList.length,
+      'file_count': fileCount,
     };
-
     final headerBytes = utf8.encode(jsonEncode(headerMap));
+
+    onProgress?.call(0.85, 'Encrypting backup with AES-256-GCM...');
+    final secretBox = await _cryptoService.encryptBackupPayload(
+      plaintext: payloadBytes,
+      backupKey: bek,
+      nonce: nonce,
+      aad: headerBytes, // authenticates the header
+    );
+    payloadBytes = null; // only the ciphertext is needed from here on
+
+    onProgress?.call(0.95, 'Packaging portable container...');
     final headerLengthBytes = Uint8List(4)..buffer.asByteData().setUint32(0, headerBytes.length, Endian.big);
 
     final container = BytesBuilder(copy: false)
       ..add(utf8.encode(containerMagic)) // 12 bytes
       ..add(headerLengthBytes)          // 4 bytes
       ..add(headerBytes)                // N bytes
-      ..add(secretBox.cipherText);       // M bytes
+      ..add(secretBox.cipherText)       // M bytes
+      ..add(secretBox.mac.bytes);       // 16 bytes (v2)
 
+    final bytes = container.takeBytes();
+    if (bytes.length > maxBackupBytes) {
+      throw BackupTooLargeException(
+        'Your vault (${_mb(bytes.length)}) is larger than the ${_mb(maxBackupBytes)} backup limit. '
+        'Remove some large documents or photos, then try again.',
+      );
+    }
     onProgress?.call(1.0, 'Backup created successfully');
-    return container.takeBytes();
+    return bytes;
+  }
+
+  static Uint8List _encodeJsonUtf8(Object value) {
+    final bytes = JsonUtf8Encoder().convert(value);
+    return bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
   }
 
   /// Inspects a backup file and returns its unencrypted header metadata without needing the passphrase
@@ -447,13 +522,31 @@ class VaultBackupService {
     }
 
     final nonceStr = header['nonce'] as String?;
-    final macStr = header['mac'] as String?;
-    if (nonceStr == null || macStr == null) {
+    final bodyStart = 16 + headerLen;
+    final List<int> mac;
+    final List<int> ciphertext;
+    final List<int> aad;
+    if (version >= 2) {
+      if (fileBytes.length < bodyStart + _tagLength) {
+        throw const InvalidBackupFormatException('Backup file is truncated or invalid.');
+      }
+      mac = fileBytes.sublist(fileBytes.length - _tagLength);
+      ciphertext = fileBytes.sublist(bodyStart, fileBytes.length - _tagLength);
+      aad = fileBytes.sublist(16, bodyStart);
+    } else {
+      final macStr = header['mac'] as String?;
+      if (macStr == null) {
+        throw const InvalidBackupFormatException('Missing cryptographic nonce or MAC in backup header.');
+      }
+      mac = base64Decode(macStr);
+      ciphertext = fileBytes.sublist(bodyStart);
+      aad = const [];
+    }
+    if (nonceStr == null) {
       throw const InvalidBackupFormatException('Missing cryptographic nonce or MAC in backup header.');
     }
 
     final nonce = base64Decode(nonceStr);
-    final mac = base64Decode(macStr);
 
     if (nonce.length != 12) {
       throw const InvalidBackupFormatException('Invalid AES-GCM nonce length in backup header (must be 12 bytes).');
@@ -461,8 +554,6 @@ class VaultBackupService {
     if (mac.length != 16) {
       throw const InvalidBackupFormatException('Invalid AES-GCM MAC tag length in backup header (must be 16 bytes).');
     }
-
-    final ciphertext = fileBytes.sublist(16 + headerLen);
 
     onProgress?.call(0.3, 'Deriving backup key with Argon2id...');
     final bek = await _cryptoService.deriveBackupKey(
@@ -481,14 +572,15 @@ class VaultBackupService {
         nonce: nonce,
         mac: mac,
         backupKey: bek,
+        aad: aad,
       );
     } catch (_) {
       throw const InvalidBackupPassphraseException('Incorrect backup passphrase or corrupted backup file.');
     }
 
     onProgress?.call(0.8, 'Validating records and attachment checksums...');
-    final payloadJsonStr = utf8.decode(plaintextBytes);
-    final payloadMap = jsonDecode(payloadJsonStr) as Map<String, dynamic>;
+    // Fused decoder: parses the UTF-8 bytes directly, without a String copy of the whole vault.
+    final payloadMap = utf8.decoder.fuse(json.decoder).convert(plaintextBytes) as Map<String, dynamic>;
     final payload = BackupPayload.fromMap(payloadMap);
 
     // Validate path safety and file integrity
@@ -516,7 +608,11 @@ class VaultBackupService {
     return payload;
   }
 
-  /// Restores a validated backup payload into the database with atomic rollback safety
+  /// Restores a validated backup payload into the database with atomic rollback safety.
+  ///
+  /// Order matters: attachments are first re-encrypted under NEW unique file names, so live
+  /// files are never overwritten. Rows are then swapped in a single transaction (rolled back
+  /// automatically by SQLite on failure). Old files are deleted only after the commit.
   Future<RestoreResult> restoreBackupPayload({
     required BackupPayload payload,
     required Uint8List currentVek,
@@ -535,22 +631,46 @@ class VaultBackupService {
       throw const BackupException('Vault already contains items. Explicit confirmation is required to replace data.');
     }
 
-    onProgress?.call(0.1, 'Creating recovery rollback point...');
-    // Capture recovery snapshot of existing data in memory
-    final oldItems = await db.query('vault_items');
-    final oldPasswords = await db.query('password_entries');
-    final oldIdentities = await db.query('identity_entries');
-    final oldDocuments = await db.query('document_entries');
-    final oldNotes = await db.query('notes');
-    final oldContacts = await db.query('contacts');
-    final oldTags = await db.query('tags');
-    final oldItemTags = await db.query('item_tags');
-
+    final oldPaths = await _allAttachmentPaths(db);
     final newlyCreatedFiles = <String>[];
     final currentFileStorageKey = await _cryptoService.deriveFileStorageKey(currentVek);
 
     try {
-      onProgress?.call(0.3, 'Updating database records in transaction...');
+      onProgress?.call(0.2, 'Re-encrypting file attachments...');
+      // Backup relative path -> freshly written relative path
+      final pathMap = <String, String>{};
+      for (final file in payload.files) {
+        final backupPath = p.basename(file.relativePath);
+        if (pathMap.containsKey(backupPath)) continue;
+        final stored = await _fileService.encryptAndSave(
+          fileBytes: base64Decode(file.dataB64),
+          originalFileName: p.basename(file.fileName),
+          fileStorageKey: currentFileStorageKey,
+        );
+        newlyCreatedFiles.add(stored.relativePath);
+        pathMap[backupPath] = stored.relativePath;
+      }
+
+      List<Map<String, dynamic>> remapped(List<Map<String, dynamic>> rows, String column) {
+        return rows.map((row) {
+          final copy = Map<String, dynamic>.from(row);
+          final path = copy[column];
+          if (path is String && path.isNotEmpty) {
+            copy[column] = pathMap[p.basename(path)] ?? path;
+          }
+          return copy;
+        }).toList();
+      }
+
+      // Thumbnails are not backed up; they are regenerated on first view.
+      final documentEntries = remapped(payload.documentEntries, 'file_path');
+      for (final row in documentEntries) {
+        row['thumbnail_path'] = null;
+      }
+      final identityEntries = remapped(payload.identityEntries, 'attachment_path');
+      final contacts = remapped(payload.contacts, 'attachment_path');
+
+      onProgress?.call(0.6, 'Updating database records in transaction...');
       await db.transaction((txn) async {
         // Clear old records
         await txn.delete('item_tags');
@@ -562,131 +682,61 @@ class VaultBackupService {
         await txn.delete('password_entries');
         await txn.delete('vault_items');
 
-        // Insert restored records
-        for (final row in payload.vaultItems) {
-          await txn.insert('vault_items', row, conflictAlgorithm: ConflictAlgorithm.replace);
+        Future<void> insertAll(String table, List<Map<String, dynamic>> rows) async {
+          for (final row in rows) {
+            await txn.insert(table, row, conflictAlgorithm: ConflictAlgorithm.replace);
+          }
         }
-        for (final row in payload.passwordEntries) {
-          await txn.insert('password_entries', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.identityEntries) {
-          await txn.insert('identity_entries', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.documentEntries) {
-          await txn.insert('document_entries', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.notes) {
-          await txn.insert('notes', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.contacts) {
-          await txn.insert('contacts', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.tags) {
-          await txn.insert('tags', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        for (final row in payload.itemTags) {
-          await txn.insert('item_tags', row, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
+
+        await insertAll('vault_items', payload.vaultItems);
+        await insertAll('password_entries', payload.passwordEntries);
+        await insertAll('identity_entries', identityEntries);
+        await insertAll('document_entries', documentEntries);
+        await insertAll('notes', payload.notes);
+        await insertAll('contacts', contacts);
+        await insertAll('tags', payload.tags);
+        await insertAll('item_tags', payload.itemTags);
       });
-
-      onProgress?.call(0.6, 'Re-encrypting and restoring file attachments...');
-      for (final file in payload.files) {
-        final rawBytes = base64Decode(file.dataB64);
-        final stored = await _fileService.encryptAndSave(
-          fileBytes: rawBytes,
-          originalFileName: p.basename(file.fileName),
-          fileStorageKey: currentFileStorageKey,
-          customRelativePath: p.basename(file.relativePath),
-        );
-        newlyCreatedFiles.add(stored.relativePath);
-      }
-
-      // Cleanup old files that are not referenced in the restored database
-      if (replaceExisting) {
-        final activeDocRows = await db.query('document_entries', columns: ['file_path']);
-        final activeIdRows = await db.query('identity_entries', columns: ['attachment_path']);
-        final activePaths = <String>{};
-        for (final r in activeDocRows) {
-          if (r['file_path'] != null) activePaths.add(r['file_path'] as String);
-        }
-        for (final r in activeIdRows) {
-          if (r['attachment_path'] != null) activePaths.add(r['attachment_path'] as String);
-        }
-
-        // Check old docs and id attachment paths
-        for (final doc in oldDocuments) {
-          final oldPath = doc['file_path'] as String?;
-          if (oldPath != null && !activePaths.contains(oldPath)) {
-            try {
-              await _fileService.deleteEncryptedFile(oldPath);
-            } catch (_) {}
-          }
-        }
-        for (final idn in oldIdentities) {
-          final oldPath = idn['attachment_path'] as String?;
-          if (oldPath != null && !activePaths.contains(oldPath)) {
-            try {
-              await _fileService.deleteEncryptedFile(oldPath);
-            } catch (_) {}
-          }
-        }
-      }
-
-      onProgress?.call(1.0, 'Restoration complete');
-      return RestoreResult(
-        success: true,
-        itemsRestored: payload.vaultItems.length,
-        filesRestored: payload.files.length,
-        message: 'Successfully restored ${payload.vaultItems.length} items and ${payload.files.length} attachments.',
-      );
     } catch (e) {
-      // ROLLBACK SAFETY
-      // 1. Delete all newly written files
+      // Nothing committed: the transaction rolled itself back (or was never started).
+      // Only the files written above need removing; they have new names, so live files are untouched.
       for (final f in newlyCreatedFiles) {
-        try {
-          await _fileService.deleteEncryptedFile(f);
-        } catch (_) {}
+        await _fileService.deleteEncryptedFile(f);
       }
-
-      // 2. Restore all original rows from recovery point
-      await db.transaction((txn) async {
-        await txn.delete('item_tags');
-        await txn.delete('tags');
-        await txn.delete('contacts');
-        await txn.delete('notes');
-        await txn.delete('document_entries');
-        await txn.delete('identity_entries');
-        await txn.delete('password_entries');
-        await txn.delete('vault_items');
-
-        for (final row in oldItems) {
-          await txn.insert('vault_items', row);
-        }
-        for (final row in oldPasswords) {
-          await txn.insert('password_entries', row);
-        }
-        for (final row in oldIdentities) {
-          await txn.insert('identity_entries', row);
-        }
-        for (final row in oldDocuments) {
-          await txn.insert('document_entries', row);
-        }
-        for (final row in oldNotes) {
-          await txn.insert('notes', row);
-        }
-        for (final row in oldContacts) {
-          await txn.insert('contacts', row);
-        }
-        for (final row in oldTags) {
-          await txn.insert('tags', row);
-        }
-        for (final row in oldItemTags) {
-          await txn.insert('item_tags', row);
-        }
-      });
-
-      throw BackupException('Restoration failed and changes were rolled back: $e');
+      debugPrint('MyVault: restore rolled back (${e.runtimeType})');
+      throw const BackupException('The backup could not be restored. Your vault was not changed.');
     }
+
+    onProgress?.call(0.9, 'Removing replaced files...');
+    final activePaths = await _allAttachmentPaths(db);
+    for (final oldPath in oldPaths.difference(activePaths)) {
+      await _fileService.deleteEncryptedFile(oldPath);
+    }
+
+    onProgress?.call(1.0, 'Restoration complete');
+    return RestoreResult(
+      success: true,
+      itemsRestored: payload.vaultItems.length,
+      filesRestored: newlyCreatedFiles.length,
+      message: 'Successfully restored ${payload.vaultItems.length} items and ${newlyCreatedFiles.length} attachments.',
+    );
+  }
+
+  /// Every encrypted file referenced anywhere in the vault database
+  Future<Set<String>> _allAttachmentPaths(Database db) async {
+    final paths = <String>{};
+    for (final (table, column) in const [
+      ('document_entries', 'file_path'),
+      ('document_entries', 'thumbnail_path'),
+      ('identity_entries', 'attachment_path'),
+      ('contacts', 'attachment_path'),
+    ]) {
+      for (final row in await db.query(table, columns: [column])) {
+        final path = row[column] as String?;
+        if (path != null && path.isNotEmpty) paths.add(path);
+      }
+    }
+    return paths;
   }
 }
 

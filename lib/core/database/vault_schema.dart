@@ -2,7 +2,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 
 /// Database schema definitions, migrations, and table creation logic for SQLCipher
 class VaultSchema {
-  static const int currentVersion = 4;
+  static const int currentVersion = 7;
   static const String dbFileName = 'myvault_encrypted.db';
 
   static Future<void> onConfigure(Database db) async {
@@ -19,6 +19,7 @@ class VaultSchema {
           category TEXT NOT NULL,
           title TEXT NOT NULL,
           subtitle TEXT,
+          subcategory TEXT,
           is_favourite INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
@@ -66,6 +67,7 @@ class VaultSchema {
           mime_type TEXT NOT NULL,
           file_extension TEXT NOT NULL,
           notes TEXT,
+          thumbnail_path TEXT,
           FOREIGN KEY (item_id) REFERENCES vault_items (id) ON DELETE CASCADE
         );
       ''');
@@ -138,22 +140,78 @@ class VaultSchema {
     // Migration hooks for schema versions
     if (oldVersion < 2) {
       // V2: Add optional attachment_path to identity_entries
-      await db.execute('ALTER TABLE identity_entries ADD COLUMN attachment_path TEXT;');
+      await _addColumn(db, 'identity_entries', 'attachment_path');
     }
     if (oldVersion < 3) {
       // V3: Extend notes with tags and contacts with full profile fields
-      await db.execute('ALTER TABLE notes ADD COLUMN tags TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN job_title TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN birthday TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN notes TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN tags TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN secondary_phone TEXT;');
-      await db.execute('ALTER TABLE contacts ADD COLUMN secondary_email TEXT;');
+      await _addColumn(db, 'notes', 'tags');
+      await _addColumn(db, 'contacts', 'job_title');
+      await _addColumn(db, 'contacts', 'birthday');
+      await _addColumn(db, 'contacts', 'notes');
+      await _addColumn(db, 'contacts', 'tags');
+      await _addColumn(db, 'contacts', 'secondary_phone');
+      await _addColumn(db, 'contacts', 'secondary_email');
     }
     if (oldVersion < 4) {
       // V4: Add attachment_path (photo) to contacts
-      await db.execute('ALTER TABLE contacts ADD COLUMN attachment_path TEXT;');
+      await _addColumn(db, 'contacts', 'attachment_path');
     }
+    if (oldVersion < 5) {
+      // V5: Persist item subcategory (password type, ID type, note/contact category)
+      await _addColumn(db, 'vault_items', 'subcategory');
+    }
+    if (oldVersion < 6) {
+      // V6: Remove the sample items that early builds seeded into every vault.
+      await removeLegacySampleItems(db);
+    }
+    if (oldVersion < 7) {
+      // V7: Encrypted thumbnails for the photo grid
+      await _addColumn(db, 'document_entries', 'thumbnail_path');
+    }
+  }
+
+  /// Adds a TEXT column only if its table exists and lacks it, so a migration can never fail
+  /// on a database that already has the column (or predates the table).
+  static Future<void> _addColumn(DatabaseExecutor db, String table, String column) async {
+    final info = await db.rawQuery('PRAGMA table_info($table)');
+    if (info.isEmpty) return;
+    if (info.any((c) => c['name'] == column)) return;
+    await db.execute('ALTER TABLE $table ADD COLUMN $column TEXT;');
+  }
+
+  /// Ids of the sample items early builds inserted on unlock. Real items never use these:
+  /// their ids embed a 13-digit timestamp.
+  static const Set<String> legacySampleIds = {
+    'pwd_1', 'pwd_2', 'pwd_3', 'pwd_4', 'pwd_5', 'pwd_6',
+    'id_1', 'id_2', 'id_3', 'id_4', 'id_5', 'id_6',
+    'doc_1', 'doc_2', 'doc_3', 'doc_4', 'doc_5', 'doc_6',
+    'photo_1', 'photo_2', 'photo_3', 'photo_4',
+    'note_1', 'note_2', 'note_3', 'note_4', 'note_5', 'note_6',
+    'contact_1', 'contact_2', 'contact_3', 'contact_4', 'contact_5', 'contact_6',
+  };
+
+  /// Deletes untouched sample items. If the user ever edited one, saving rewrote its detail row
+  /// with the id `entry_<itemId>`; such items are kept as the user's own data.
+  static Future<int> removeLegacySampleItems(DatabaseExecutor db) async {
+    var removed = 0;
+    final existing = (await db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table'"))
+        .map((r) => r['name'] as String)
+        .toSet();
+    final detailTables = const ['password_entries', 'identity_entries', 'document_entries', 'notes', 'contacts']
+        .where(existing.contains)
+        .toList();
+    for (final id in legacySampleIds) {
+      var edited = false;
+      for (final table in detailTables) {
+        final rows = await db.query(table, columns: ['id'], where: 'item_id = ? AND id = ?', whereArgs: [id, 'entry_$id']);
+        if (rows.isNotEmpty) {
+          edited = true;
+          break;
+        }
+      }
+      if (!edited) removed += await db.delete('vault_items', where: 'id = ?', whereArgs: [id]);
+    }
+    return removed;
   }
 }
 

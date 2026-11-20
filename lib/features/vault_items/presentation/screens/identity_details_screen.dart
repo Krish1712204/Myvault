@@ -7,6 +7,9 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/clipboard_service.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../data/vault_item_model.dart';
+import '../../../../core/ui/user_message.dart';
+import '../../../../shared/widgets/detail_actions.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 
 class IdentityDetailsScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -30,18 +33,18 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Delete ID Card?',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}" and any attachments from your vault? This action cannot be undone.',
-          style: const TextStyle(color: AppColors.textPrimaryNavy),
+          style: TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -57,8 +60,17 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.title} deleted from vault'),
@@ -110,13 +122,13 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                   child: Image.memory(
                     bytes,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Padding(
-                      padding: EdgeInsets.all(24.0),
+                    errorBuilder: (_, __, ___) => Padding(
+                      padding: const EdgeInsets.all(24.0),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.insert_drive_file_outlined, size: 48, color: AppColors.primary),
-                          SizedBox(height: 12),
+                          const Icon(Icons.insert_drive_file_outlined, size: 48, color: AppColors.primary),
+                          const SizedBox(height: 12),
                           Text(
                             'Document attachment (Non-image file)',
                             style: TextStyle(color: AppColors.textPrimaryNavy),
@@ -137,7 +149,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       setState(() => _isLoadingAttachment = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to open attachment: $e'),
+          content: Text('Could not open the scan. ${userMessage(e)}'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -154,17 +166,10 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
 
       // Determine genuine file format from magic bytes (never save as .enc)
       String ext = '.jpg';
-      if (bytes.length >= 4 &&
-          bytes[0] == 0x25 &&
-          bytes[1] == 0x50 &&
-          bytes[2] == 0x44 &&
-          bytes[3] == 0x46) {
+      if (bytes.length >= 4 && bytes[0] == 0x25 && bytes[1] == 0x50 && bytes[2] == 0x44 && bytes[3] == 0x46) {
         // %PDF
         ext = '.pdf';
-      } else if (bytes.length >= 3 &&
-          bytes[0] == 0xFF &&
-          bytes[1] == 0xD8 &&
-          bytes[2] == 0xFF) {
+      } else if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
         // JPEG SOI
         ext = '.jpg';
       } else if (bytes.length >= 8 &&
@@ -194,6 +199,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       final cleanTitle = item.title.replaceAll(RegExp(r'[^\w\s-]'), '').trim().replaceAll(' ', '_');
       final defaultFileName = '${cleanTitle.isEmpty ? "id_document" : cleanTitle}$ext';
 
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final savedPath = await FilePicker.saveFile(
         dialogTitle: 'Download ID Card',
         fileName: defaultFileName,
@@ -212,7 +218,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Download failed: $e'),
+            content: Text('Could not save the scan. ${userMessage(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -226,6 +232,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
 
   Future<void> _uploadAttachment(VaultItem item) async {
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
@@ -233,6 +240,8 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       if (files.isNotEmpty) {
         final file = files.first;
         final bytes = await file.readAsBytes();
+        // The picker leaves an unencrypted copy in the app cache; remove it now.
+        FilePicker.clearTemporaryFiles().ignore();
         final path = await ref.read(vaultItemsProvider.notifier).encryptAttachment(
               fileBytes: bytes,
               originalFileName: file.name,
@@ -243,7 +252,11 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
               documentType: item.documentType ?? item.title,
               documentNumber: item.documentNumber,
               fullName: item.fullName,
+              issuedDate: item.issuedDate,
+              expiryDate: item.expiryDate,
+              issuingCountry: item.issuingCountry,
               subcategory: item.subcategory ?? 'Government',
+              notes: item.details,
               attachmentPath: path,
               isFavourite: item.isFavourite,
             );
@@ -260,7 +273,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Upload failed: $e'),
+            content: Text('Could not upload the scan. ${userMessage(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -287,9 +300,9 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.badge_outlined, size: 48, color: AppColors.textMutedNavy),
+              Icon(Icons.badge_outlined, size: 48, color: AppColors.textMutedNavy),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'ID Card record not found or vault is locked',
                 style: TextStyle(color: AppColors.textMutedNavy),
               ),
@@ -309,12 +322,8 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
 
     final isPaymentCard = item.documentType == 'Debit Card' || item.documentType == 'Credit Card';
     final isUpi = item.documentType == 'UPI ID';
-    final numberHeading = isPaymentCard
-        ? 'CARD NUMBER (LAST 4 DIGITS)'
-        : (isUpi ? 'UPI ID' : 'ID NUMBER');
-    final nameHeading = isPaymentCard
-        ? 'Cardholder Name'
-        : (isUpi ? 'Account Name' : 'Holder Name');
+    final numberHeading = isPaymentCard ? 'CARD NUMBER' : (isUpi ? 'UPI ID' : 'ID NUMBER');
+    final nameHeading = isPaymentCard ? 'Cardholder Name' : (isUpi ? 'Account Name' : 'Holder Name');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -325,7 +334,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
         ),
         title: Text(
           isPaymentCard ? 'Card Details' : (isUpi ? 'UPI Details' : 'ID Card Details'),
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -338,12 +347,20 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
               color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
               size: 24,
             ),
-            onPressed: () {
-              ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+            onPressed: () async {
+              final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              if (!saved && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not update favourite. Please try again.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
           ),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
+            icon: Icon(Icons.more_vert_rounded, color: AppColors.textMutedNavy),
             onSelected: (val) {
               if (val == 'edit') {
                 context.push('/edit-id/${item.id}');
@@ -417,7 +434,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            item.subcategory?.toUpperCase() ?? 'GOVERNMENT ID',
+                            isPaymentCard ? 'BANK CARD' : (isUpi ? 'UPI' : (item.subcategory?.toUpperCase() ?? 'GOVERNMENT ID')),
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
@@ -463,7 +480,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -475,7 +492,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                         children: [
                           Text(
                             numberHeading,
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: AppColors.textMutedNavy,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
@@ -536,7 +553,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -554,15 +571,15 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: AppColors.border),
+                  side: BorderSide(color: AppColors.border),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'ID Card Document / Scan',
+                      Text(
+                        isPaymentCard ? 'Card Scan' : 'ID Card Document / Scan',
                         style: TextStyle(
                           color: AppColors.textPrimaryNavy,
                           fontWeight: FontWeight.bold,
@@ -582,7 +599,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                               child: const Icon(Icons.badge_rounded, color: AppColors.primary, size: 24),
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
@@ -594,7 +611,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                                       fontSize: 13,
                                     ),
                                   ),
-                                  SizedBox(height: 2),
+                                  const SizedBox(height: 2),
                                   Text(
                                     'Saved securely in your vault',
                                     style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
@@ -670,19 +687,19 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
                               borderRadius: BorderRadius.circular(10),
                               border: Border.all(color: AppColors.primary.withAlpha(60)),
                             ),
-                            child: const Column(
+                            child: Column(
                               children: [
-                                Icon(Icons.upload_file_rounded, size: 32, color: AppColors.primary),
-                                SizedBox(height: 8),
+                                const Icon(Icons.upload_file_rounded, size: 32, color: AppColors.primary),
+                                const SizedBox(height: 8),
                                 Text(
-                                  'Upload ID Card (Image / PDF)',
-                                  style: TextStyle(
+                                  isPaymentCard ? 'Upload card scan (Image / PDF)' : 'Upload ID Card (Image / PDF)',
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     color: AppColors.primary,
                                     fontSize: 13,
                                   ),
                                 ),
-                                SizedBox(height: 2),
+                                const SizedBox(height: 2),
                                 Text(
                                   'Tap to select a document or scan to attach',
                                   style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
@@ -699,36 +716,10 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
               const SizedBox(height: AppSpacing.xl),
 
               // Bottom Action Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                        side: const BorderSide(color: AppColors.error),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                      label: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => _confirmDelete(context, item),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 20),
-                      label: const Text('Edit ID', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => context.push('/edit-id/${item.id}'),
-                    ),
-                  ),
-                ],
+              DetailActions(
+                onDelete: () => _confirmDelete(context, item),
+                onEdit: () => context.push('/edit-id/${item.id}'),
+                editLabel: 'Edit',
               ),
               const SizedBox(height: AppSpacing.xl),
             ],
@@ -746,7 +737,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
           width: 120,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textMutedNavy,
               fontSize: 13,
             ),
@@ -755,7 +746,7 @@ class _IdentityDetailsScreenState extends ConsumerState<IdentityDetailsScreen> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.textPrimaryNavy,
               fontSize: 14,
               fontWeight: FontWeight.w600,

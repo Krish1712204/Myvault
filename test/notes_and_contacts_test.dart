@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'vault_test_helpers.dart';
 import 'package:myvault/core/database/vault_database.dart';
 import 'package:myvault/core/database/vault_schema.dart';
 import 'package:myvault/core/security/vault_crypto_service.dart';
@@ -96,7 +97,7 @@ void main() {
       expect(retrieved.isFavourite, isTrue);
 
       // Verify category listing
-      final notes = await repository.getItemsByCategory(VaultCategory.notes);
+      final notes = await itemsInCategory(repository, VaultCategory.notes);
       expect(notes.length, equals(1));
       expect(notes.first.id, equals(itemId));
     });
@@ -226,7 +227,7 @@ void main() {
       expect(retrieved.tags, equals('colleague,vip,dev'));
       expect(retrieved.isFavourite, isTrue);
 
-      final contactsList = await repository.getItemsByCategory(VaultCategory.contacts);
+      final contactsList = await itemsInCategory(repository, VaultCategory.contacts);
       expect(contactsList.length, equals(1));
     });
 
@@ -413,64 +414,64 @@ void main() {
     });
 
     test('Searches across passwords by username or url', () async {
-      final results = await repository.searchItems('prathameshdev');
+      final results = await searchVault(repository, 'prathameshdev');
       expect(results.length, equals(1));
       expect(results.first.id, equals('s_pwd_1'));
       expect(results.first.category, equals(VaultCategory.passwords));
     });
 
     test('Searches across identity entries by document number or holder name', () async {
-      final results = await repository.searchItems('Z9876543');
+      final results = await searchVault(repository, 'Z9876543');
       expect(results.length, equals(1));
       expect(results.first.id, equals('s_idn_1'));
       expect(results.first.category, equals(VaultCategory.idCards));
     });
 
     test('Searches across documents by file name or notes', () async {
-      final results = await repository.searchItems('rental_agreement');
+      final results = await searchVault(repository, 'rental_agreement');
       expect(results.length, equals(1));
       expect(results.first.id, equals('s_doc_1'));
       expect(results.first.category, equals(VaultCategory.documents));
 
-      final noteMatch = await repository.searchItems('Bandra');
+      final noteMatch = await searchVault(repository, 'Bandra');
       expect(noteMatch.length, equals(1));
       expect(noteMatch.first.id, equals('s_doc_1'));
     });
 
     test('Searches across notes by content text and tag keywords', () async {
-      final contentResults = await repository.searchItems('Argon2id');
+      final contentResults = await searchVault(repository, 'Argon2id');
       expect(contentResults.length, equals(1));
       expect(contentResults.first.id, equals('s_note_1'));
       expect(contentResults.first.category, equals(VaultCategory.notes));
 
-      final tagResults = await repository.searchItems('architecture');
+      final tagResults = await searchVault(repository, 'architecture');
       expect(tagResults.any((r) => r.id == 's_note_1'), isTrue);
     });
 
     test('Searches across contacts by name, company, job title, phone, and tags', () async {
       // Match by company
-      final companyResults = await repository.searchItems('City Hospital');
+      final companyResults = await searchVault(repository, 'City Hospital');
       expect(companyResults.length, equals(1));
       expect(companyResults.first.id, equals('s_cnt_1'));
 
       // Match by job title
-      final jobResults = await repository.searchItems('Cardiologist');
+      final jobResults = await searchVault(repository, 'Cardiologist');
       expect(jobResults.length, equals(1));
       expect(jobResults.first.id, equals('s_cnt_1'));
 
       // Match by phone number
-      final phoneResults = await repository.searchItems('94220');
+      final phoneResults = await searchVault(repository, '94220');
       expect(phoneResults.length, equals(1));
       expect(phoneResults.first.id, equals('s_cnt_1'));
 
       // Match by tag
-      final tagResults = await repository.searchItems('emergency');
+      final tagResults = await searchVault(repository, 'emergency');
       expect(tagResults.any((r) => r.id == 's_cnt_1'), isTrue);
     });
 
     test('Global multi-result search finds matches across multiple item categories', () async {
       // 'Prathamesh' matches password username, passport full name
-      final results = await repository.searchItems('prathamesh');
+      final results = await searchVault(repository, 'prathamesh');
       expect(results.length, greaterThanOrEqualTo(2));
       final categories = results.map((r) => r.category).toSet();
       expect(categories.contains(VaultCategory.passwords), isTrue);
@@ -478,7 +479,7 @@ void main() {
     });
 
     test('Empty query returns all items without errors', () async {
-      final all = await repository.searchItems('');
+      final all = await searchVault(repository, '');
       expect(all.length, equals(5));
     });
   });

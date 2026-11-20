@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
+import '../../../../shared/state/item_search.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/letter_avatar.dart';
+import '../../../../shared/state/item_display.dart';
 import '../../../vault_items/data/vault_item_model.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
@@ -33,27 +36,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       if (_selectedCategory != null && item.category != _selectedCategory) {
         return false;
       }
-      if (query.isEmpty) return true;
-      return item.title.toLowerCase().contains(query) ||
-          item.subtitle.toLowerCase().contains(query) ||
-          (item.username != null && item.username!.toLowerCase().contains(query)) ||
-          (item.url != null && item.url!.toLowerCase().contains(query)) ||
-          (item.fullName != null && item.fullName!.toLowerCase().contains(query)) ||
-          (item.documentNumber != null && item.documentNumber!.toLowerCase().contains(query)) ||
-          (item.fileName != null && item.fileName!.toLowerCase().contains(query)) ||
-          (item.details != null && item.details!.toLowerCase().contains(query)) ||
-          (item.tags != null && item.tags!.toLowerCase().contains(query)) ||
-          (item.phoneNumber != null && item.phoneNumber!.toLowerCase().contains(query)) ||
-          (item.email != null && item.email!.toLowerCase().contains(query)) ||
-          (item.company != null && item.company!.toLowerCase().contains(query)) ||
-          (item.jobTitle != null && item.jobTitle!.toLowerCase().contains(query)) ||
-          (item.address != null && item.address!.toLowerCase().contains(query));
-    }).toList();
+      return itemMatchesQuery(item, query);
+    }).toList()
+      ..sort((a, b) => (b.updatedAt ?? 0).compareTo(a.updatedAt ?? 0));
+    final showResults = query.isNotEmpty || _selectedCategory != null;
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Search',
           style: TextStyle(
             color: AppColors.textPrimaryNavy,
@@ -71,7 +62,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Find anything in your vault',
                     style: TextStyle(
                       color: AppColors.textMutedNavy,
@@ -90,17 +81,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     },
                     decoration: InputDecoration(
                       hintText: 'Search passwords, documents, notes...',
-                      prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMutedNavy),
+                      prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMutedNavy),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, color: AppColors.textMutedNavy),
+                              icon: Icon(Icons.clear_rounded, color: AppColors.textMutedNavy),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() {});
                               },
                             )
                           : null,
-                      fillColor: Colors.white,
+                      fillColor: AppColors.surface,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),
@@ -129,7 +120,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             const SizedBox(height: AppSpacing.md),
             // Content
             Expanded(
-              child: query.isNotEmpty
+              child: showResults
                   ? _buildSearchResults(filteredItems)
                   : _buildDefaultSearchContent(recentSearches),
             ),
@@ -147,7 +138,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         selected: isSelected,
         onSelected: (_) => onTap(),
         selectedColor: AppColors.primary,
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.surface,
         labelStyle: TextStyle(
           color: isSelected ? Colors.white : AppColors.textPrimaryNavy,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
@@ -173,7 +164,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Recent Searches',
                 style: TextStyle(
                   color: AppColors.textPrimaryNavy,
@@ -197,15 +188,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           ...recentSearches.map((item) {
             return ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.history_rounded, color: AppColors.textMutedNavy, size: 20),
+              leading: Icon(Icons.history_rounded, color: AppColors.textMutedNavy, size: 20),
               title: Text(
                 item,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimaryNavy,
                   fontSize: 14,
                 ),
               ),
-              trailing: const Icon(Icons.north_west_rounded, color: AppColors.textMutedNavy, size: 16),
+              trailing: Icon(Icons.north_west_rounded, color: AppColors.textMutedNavy, size: 16),
               onTap: () {
                 _searchController.text = item;
                 setState(() {});
@@ -215,7 +206,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           const SizedBox(height: AppSpacing.md),
         ],
         // Suggestions
-        const Text(
+        Text(
           'Suggestions',
           style: TextStyle(
             color: AppColors.textPrimaryNavy,
@@ -299,7 +290,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         title: Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textPrimaryNavy,
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -307,12 +298,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         ),
         subtitle: Text(
           subtitle,
-          style: const TextStyle(
+          style: TextStyle(
             color: AppColors.textMutedNavy,
             fontSize: 12,
           ),
         ),
-        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMutedNavy),
+        trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMutedNavy),
       ),
     );
   }
@@ -325,7 +316,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           children: [
             Icon(Icons.search_off_rounded, size: 48, color: AppColors.textMutedNavy.withAlpha(120)),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'No items found',
               style: TextStyle(
                 color: AppColors.textPrimaryNavy,
@@ -334,7 +325,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ),
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Try searching with a different keyword',
               style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
             ),
@@ -348,7 +339,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       itemCount: items.length,
       itemBuilder: (context, index) {
         final item = items[index];
-        final subtitle = _formatSafeSubtitle(item);
+        final subtitle = item.displaySubtitle;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 8),
@@ -376,7 +367,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                     item.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.textPrimaryNavy,
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
@@ -391,7 +382,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               subtitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textMutedNavy,
                 fontSize: 13,
               ),
@@ -401,42 +392,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 item.isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
                 color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
               ),
-              onPressed: () {
-                ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              onPressed: () async {
+                final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+                if (!saved && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Could not update favourite. Please try again.'),
+                      backgroundColor: AppColors.error,
+                    ),
+                  );
+                }
               },
             ),
           ),
         );
       },
     );
-  }
-
-  String _formatSafeSubtitle(VaultItem item) {
-    if (item.category == VaultCategory.idCards) {
-      final docNum = item.documentNumber;
-      if (docNum != null && docNum.isNotEmpty) {
-        final clean = docNum.replaceAll(' ', '');
-        final masked = clean.length <= 4 ? '•••• $clean' : '•••• ${clean.substring(clean.length - 4)}';
-        return '${item.subtitle.isNotEmpty ? "${item.subtitle} · " : ""}$masked';
-      }
-      return item.subtitle;
-    }
-    if (item.category == VaultCategory.passwords) {
-      if (item.username != null && item.username!.isNotEmpty) {
-        return item.username!;
-      }
-      return item.url ?? item.subtitle;
-    }
-    if (item.category == VaultCategory.contacts) {
-      final parts = <String>[];
-      if (item.jobTitle != null && item.jobTitle!.isNotEmpty) parts.add(item.jobTitle!);
-      if (item.company != null && item.company!.isNotEmpty) parts.add(item.company!);
-      if (parts.isEmpty && item.phoneNumber != null && item.phoneNumber!.isNotEmpty) {
-        parts.add(item.phoneNumber!);
-      }
-      return parts.isNotEmpty ? parts.join(' · ') : item.subtitle;
-    }
-    return item.subtitle;
   }
 
   Widget _buildCategoryBadge(VaultCategory category) {
@@ -496,41 +467,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   Widget _buildSearchItemAvatar(VaultItem item) {
     if (item.category == VaultCategory.passwords) {
-      Color bg = AppColors.primaryLight;
-      Color textCol = AppColors.primary;
-      String letter = item.title.isNotEmpty ? item.title[0].toUpperCase() : 'P';
-      if (item.title == 'Google') {
-        bg = const Color(0xFFEA4335).withAlpha(30);
-        textCol = const Color(0xFFEA4335);
-      } else if (item.title == 'GitHub') {
-        bg = const Color(0xFF24292E).withAlpha(30);
-        textCol = const Color(0xFF24292E);
-      } else if (item.title == 'Amazon') {
-        bg = const Color(0xFFFF9900).withAlpha(30);
-        textCol = const Color(0xFFFF9900);
-      } else if (item.title == 'Netflix') {
-        bg = const Color(0xFFE50914).withAlpha(30);
-        textCol = const Color(0xFFE50914);
-      }
-
-      return Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Center(
-          child: Text(
-            letter,
-            style: TextStyle(
-              color: textCol,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        ),
-      );
+      return LetterAvatar(name: item.title, size: 40);
     }
 
     if (item.category == VaultCategory.contacts) {

@@ -63,7 +63,7 @@ class VaultHomeScreen extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: AppSpacing.md),
-                    const Divider(color: AppColors.border),
+                    Divider(color: AppColors.border),
                     const SizedBox(height: AppSpacing.sm),
                     _buildFeatureItem(
                       context,
@@ -142,7 +142,7 @@ class VaultHomeScreen extends StatelessWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimaryNavy,
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -150,7 +150,7 @@ class VaultHomeScreen extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textMutedNavy,
                   fontSize: 12,
                 ),

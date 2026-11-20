@@ -24,7 +24,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
   bool get _hasLowercase => _passwordController.text.contains(RegExp(r'[a-z]'));
   bool get _hasNumber => _passwordController.text.contains(RegExp(r'[0-9]'));
   bool get _hasSpecialChar =>
-      _passwordController.text.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+      _passwordController.text.contains(RegExp(r'[^A-Za-z0-9\s]'));
   bool get _passwordsMatch =>
       _passwordController.text.isNotEmpty &&
       _passwordController.text == _confirmPasswordController.text;
@@ -75,7 +75,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
     final isLoading = authState.isLoading;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.surface,
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
@@ -132,7 +132,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: 'Enter master password',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
+                  prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
@@ -160,7 +160,7 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
                 onChanged: (_) => setState(() {}),
                 decoration: InputDecoration(
                   hintText: 'Confirm master password',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
+                  prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureConfirmPassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
@@ -236,8 +236,8 @@ class _CreateVaultScreenState extends ConsumerState<CreateVaultScreen> {
       child: Row(
         children: [
           Icon(
-            isSatisfied ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
-            color: isSatisfied ? AppColors.success : AppColors.success.withAlpha(140),
+            isSatisfied ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+            color: isSatisfied ? AppColors.success : AppColors.textMutedNavy,
             size: 20,
           ),
           const SizedBox(width: AppSpacing.sm),

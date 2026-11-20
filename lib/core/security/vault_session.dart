@@ -15,9 +15,6 @@ class VaultSession {
       ? Uint8List.fromList(_ephemeralVek!)
       : null;
 
-  /// Backwards-compatible alias for masterKey / VEK
-  Uint8List? get masterKey => vek;
-
   /// Starts an active session with the decrypted VEK
   void startSession(List<int> vekBytes) {
     // Zero out any existing key first

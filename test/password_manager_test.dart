@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'vault_test_helpers.dart';
 import 'package:myvault/core/database/vault_database.dart';
 import 'package:myvault/core/security/clipboard_service.dart';
 import 'package:myvault/core/security/password_generator.dart';
@@ -309,37 +310,37 @@ void main() {
     });
 
     test('Searches items by title', () async {
-      final results = await repository.searchItems('Google');
+      final results = await searchVault(repository, 'Google');
       expect(results.length, equals(1));
       expect(results.first.title, equals('Google'));
     });
 
     test('Searches items by username', () async {
-      final results = await repository.searchItems('outlook.com');
+      final results = await searchVault(repository, 'outlook.com');
       expect(results.length, equals(1));
       expect(results.first.title, equals('Microsoft'));
     });
 
     test('Searches items by website URL', () async {
-      final results = await repository.searchItems('accounts.google');
+      final results = await searchVault(repository, 'accounts.google');
       expect(results.length, equals(1));
       expect(results.first.title, equals('Google'));
     });
 
     test('Filters items by category', () async {
-      final passwords = await repository.getItemsByCategory(VaultCategory.passwords);
+      final passwords = await itemsInCategory(repository, VaultCategory.passwords);
       expect(passwords.length, equals(2));
       for (final item in passwords) {
         expect(item.category, equals(VaultCategory.passwords));
       }
 
-      final notes = await repository.getItemsByCategory(VaultCategory.notes);
+      final notes = await itemsInCategory(repository, VaultCategory.notes);
       expect(notes.length, equals(1));
       expect(notes.first.category, equals(VaultCategory.notes));
     });
 
     test('Filters items by favourite status', () async {
-      final favourites = await repository.getFavouriteItems();
+      final favourites = await favouriteItems(repository);
       expect(favourites.length, equals(2));
       for (final item in favourites) {
         expect(item.isFavourite, isTrue);
@@ -408,7 +409,7 @@ void main() {
         throwsStateError,
       );
       expect(() => repository.deleteItem('pwd_1'), throwsStateError);
-      expect(() => repository.searchItems('query'), throwsStateError);
+      expect(() => searchVault(repository, 'query'), throwsStateError);
     });
   });
 

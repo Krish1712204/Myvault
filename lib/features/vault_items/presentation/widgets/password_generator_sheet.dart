@@ -14,7 +14,9 @@ class PasswordGeneratorSheet extends StatefulWidget {
 
   static Future<String?> show(BuildContext context) {
     return showModalBottomSheet<String>(
-      context: context,
+            // Above the bottom navigation bar, not inside the current tab.
+      useRootNavigator: true,
+context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => const PasswordGeneratorSheet(),
@@ -47,9 +49,9 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
     final strength = PasswordGenerator.calculateStrength(_currentPassword);
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       padding: EdgeInsets.only(
         top: AppSpacing.md,
@@ -77,7 +79,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Password Generator',
                 style: TextStyle(
                   fontSize: 18,
@@ -86,7 +88,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close_rounded, color: AppColors.textMutedNavy),
+                icon: Icon(Icons.close_rounded, color: AppColors.textMutedNavy),
                 onPressed: () => Navigator.of(context).pop(),
               ),
             ],
@@ -96,7 +98,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
           Container(
             padding: const EdgeInsets.all(AppSpacing.md),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: AppColors.surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: AppColors.border),
               boxShadow: [
@@ -115,7 +117,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
                     Expanded(
                       child: SelectableText(
                         _currentPassword,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           letterSpacing: 1.2,
@@ -176,7 +178,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Password Length',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
@@ -292,7 +294,7 @@ class _PasswordGeneratorSheetState extends State<PasswordGeneratorSheet> {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               color: AppColors.textPrimaryNavy,
               fontWeight: FontWeight.w500,

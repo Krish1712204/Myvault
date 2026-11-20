@@ -8,6 +8,8 @@ import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/clipboard_service.dart';
 import '../../../../shared/state/vault_state_provider.dart';
 import '../../data/vault_item_model.dart';
+import '../../../../shared/widgets/detail_actions.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 
 class ContactDetailsScreen extends ConsumerStatefulWidget {
   final String itemId;
@@ -26,6 +28,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
     final cleanNumber = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
     final uri = Uri(scheme: 'tel', path: cleanNumber);
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final launched = await launchUrl(uri);
       if (!launched) {
         throw Exception('Could not launch dialer');
@@ -51,6 +54,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
     final cleanNumber = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
     final uri = Uri(scheme: 'sms', path: cleanNumber);
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final launched = await launchUrl(uri);
       if (!launched) {
         throw Exception('Could not launch SMS');
@@ -69,6 +73,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
   Future<void> _sendEmail(BuildContext context, String email) async {
     final uri = Uri(scheme: 'mailto', path: email.trim());
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final launched = await launchUrl(uri);
       if (!launched) {
         throw Exception('Could not launch email app');
@@ -95,18 +100,18 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Delete Contact?',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}" from your vault? This action cannot be undone.',
-          style: const TextStyle(color: AppColors.textPrimaryNavy),
+          style: TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -122,8 +127,17 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.title} deleted from vault'),
@@ -195,9 +209,9 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.person_outline_rounded, size: 48, color: AppColors.textMutedNavy),
+              Icon(Icons.person_outline_rounded, size: 48, color: AppColors.textMutedNavy),
               const SizedBox(height: 12),
-              const Text('Contact not found', style: TextStyle(color: AppColors.textMutedNavy)),
+              Text('Contact not found', style: TextStyle(color: AppColors.textMutedNavy)),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: () => context.pop(),
@@ -221,7 +235,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'Contact Details',
           style: TextStyle(
             color: AppColors.textPrimaryNavy,
@@ -237,18 +251,19 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               size: 24,
             ),
             tooltip: item.isFavourite ? 'Starred' : 'Mark as Favourite',
-            onPressed: () {
-              ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+            onPressed: () async {
+              final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              if (!saved && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not update favourite. Please try again.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 22),
-            onPressed: () => context.push('/edit-contact/${item.id}'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 22),
-            onPressed: () => _confirmDelete(context, item),
-          ),
+          // Edit and Delete live in the action row at the bottom, as on every details screen.
           const SizedBox(width: 4),
         ],
       ),
@@ -262,7 +277,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
@@ -279,7 +294,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                     Text(
                       item.title,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: AppColors.textPrimaryNavy,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -340,7 +355,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -353,7 +368,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       'Contact Information',
                       style: TextStyle(
                         color: AppColors.textPrimaryNavy,
@@ -377,7 +392,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
                         ),
                       ),
                     if (primaryPhone.isNotEmpty && email != null && email.isNotEmpty)
-                      const Divider(height: 20, color: AppColors.border),
+                      Divider(height: 20, color: AppColors.border),
                     // Email Row (if exists)
                     if (email != null && email.isNotEmpty)
                       _buildContactRow(
@@ -399,36 +414,10 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               const SizedBox(height: AppSpacing.xl),
 
               // Edit and Delete Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.primary,
-                        side: const BorderSide(color: AppColors.primary),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Edit Contact', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => context.push('/edit-contact/${item.id}'),
-                    ),
-                  ),
-                  const SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                        side: const BorderSide(color: AppColors.error),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                      label: const Text('Delete', style: TextStyle(fontWeight: FontWeight.bold)),
-                      onPressed: () => _confirmDelete(context, item),
-                    ),
-                  ),
-                ],
+              DetailActions(
+                onDelete: () => _confirmDelete(context, item),
+                onEdit: () => context.push('/edit-contact/${item.id}'),
+                editLabel: 'Edit',
               ),
               const SizedBox(height: AppSpacing.lg),
             ],
@@ -552,7 +541,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textMutedNavy,
                   fontSize: 11,
                   fontWeight: FontWeight.w500,
@@ -561,7 +550,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
               const SizedBox(height: 2),
               SelectableText(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.textPrimaryNavy,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -575,7 +564,7 @@ class _ContactDetailsScreenState extends ConsumerState<ContactDetailsScreen> {
           onPressed: onAction,
         ),
         IconButton(
-          icon: const Icon(Icons.copy_rounded, size: 18, color: AppColors.textMutedNavy),
+          icon: Icon(Icons.copy_rounded, size: 18, color: AppColors.textMutedNavy),
           onPressed: onCopy,
         ),
       ],

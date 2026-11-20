@@ -95,6 +95,8 @@ class DocumentEntry {
   final String mimeType;
   final String fileExtension;
   final String? notes;
+  /// Small encrypted preview image (photos only); generated on save or on first view.
+  final String? thumbnailPath;
 
   const DocumentEntry({
     required this.id,
@@ -105,6 +107,7 @@ class DocumentEntry {
     required this.mimeType,
     required this.fileExtension,
     this.notes,
+    this.thumbnailPath,
   });
 
   Map<String, dynamic> toMap() => {
@@ -116,6 +119,7 @@ class DocumentEntry {
         'mime_type': mimeType,
         'file_extension': fileExtension,
         'notes': notes,
+        'thumbnail_path': thumbnailPath,
       };
 
   factory DocumentEntry.fromMap(Map<String, dynamic> map) => DocumentEntry(
@@ -127,6 +131,7 @@ class DocumentEntry {
         mimeType: map['mime_type'] as String,
         fileExtension: map['file_extension'] as String,
         notes: map['notes'] as String?,
+        thumbnailPath: map['thumbnail_path'] as String?,
       );
 }
 

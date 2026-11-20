@@ -79,6 +79,7 @@ class VaultItem {
   final int? fileSize;
   final String? mimeType;
   final String? fileExtension;
+  final String? thumbnailPath;
 
   // Notes & Contacts specific fields (Phase 6)
   final String? colorTag;
@@ -119,6 +120,7 @@ class VaultItem {
     this.fileSize,
     this.mimeType,
     this.fileExtension,
+    this.thumbnailPath,
     this.colorTag,
     this.tags,
     this.phoneNumber,
@@ -158,6 +160,7 @@ class VaultItem {
     int? fileSize,
     String? mimeType,
     String? fileExtension,
+    String? thumbnailPath,
     String? colorTag,
     String? tags,
     String? phoneNumber,
@@ -196,6 +199,7 @@ class VaultItem {
       fileSize: fileSize ?? this.fileSize,
       mimeType: mimeType ?? this.mimeType,
       fileExtension: fileExtension ?? this.fileExtension,
+      thumbnailPath: thumbnailPath ?? this.thumbnailPath,
       colorTag: colorTag ?? this.colorTag,
       tags: tags ?? this.tags,
       phoneNumber: phoneNumber ?? this.phoneNumber,

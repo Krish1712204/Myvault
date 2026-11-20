@@ -22,6 +22,7 @@ out.map
 **/android/**/local.properties
 **/android/**/GeneratedPluginRegistrant.java
 **/android/.gradle/
+**/android/.kotlin/
 **/android/captures/
 
 # Secrets, Keystores, and Signing Keys

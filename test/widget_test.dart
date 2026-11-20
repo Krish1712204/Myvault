@@ -14,7 +14,6 @@ class UnlockedAuthNotifier extends VaultAuthNotifier {
     required super.biometricService,
     required super.session,
     required super.vaultDb,
-    required super.repository,
   }) {
     state = const VaultAuthState(
       status: VaultStatus.unlocked,
@@ -56,6 +55,7 @@ void main() {
   });
 
   testWidgets('Unlocked vault launches and renders home dashboard with categories', (WidgetTester tester) async {
+    FlutterSecureStorage.setMockInitialValues({'user_profile_name': 'Krishna Shelar'});
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() => tester.view.resetPhysicalSize());
@@ -69,7 +69,6 @@ void main() {
                 biometricService: ref.watch(vaultBiometricServiceProvider),
                 session: ref.watch(vaultSessionProvider),
                 vaultDb: ref.watch(vaultDatabaseProvider),
-                repository: ref.watch(vaultRepositoryProvider),
               )),
         ],
         child: const MyVaultApp(),
@@ -77,10 +76,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify Title and Hero card
-    expect(find.text('MyVault'), findsWidgets);
-    expect(find.text('Good Morning.'), findsOneWidget);
-    expect(find.text('Your data is safe and secure'), findsOneWidget);
+    // Verify greeting and health card
+    expect(find.text('Krishna'), findsOneWidget);
+    expect(find.textContaining('Good '), findsOneWidget);
+    expect(find.textContaining('Vault health'), findsOneWidget);
+    expect(find.text('Your Vault'), findsOneWidget);
 
     // Verify Dashboard Categories
     expect(find.text('Passwords'), findsOneWidget);
@@ -109,7 +109,6 @@ void main() {
                 biometricService: ref.watch(vaultBiometricServiceProvider),
                 session: ref.watch(vaultSessionProvider),
                 vaultDb: ref.watch(vaultDatabaseProvider),
-                repository: ref.watch(vaultRepositoryProvider),
               )),
         ],
         child: const MyVaultApp(),

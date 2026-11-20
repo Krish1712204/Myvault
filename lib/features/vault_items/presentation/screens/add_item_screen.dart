@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/password_generator.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/vault_form_kit.dart';
+import '../widgets/password_generator_sheet.dart';
 import '../../data/vault_item_model.dart';
 
 class AddItemScreen extends ConsumerStatefulWidget {
@@ -25,6 +26,8 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  /// The item being edited; its notes (not shown in this form) are kept on save.
+  VaultItem? _existing;
   bool _initialized = false;
   bool _isSaving = false;
   bool _obscurePassword = true;
@@ -73,6 +76,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         ),
       );
       if (item.id.isNotEmpty) {
+        _existing = item;
         _nameController.text = item.title;
         _urlController.text = item.url ?? '';
         _usernameController.text = item.username ?? '';
@@ -124,7 +128,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
             username: _usernameController.text.trim(),
             password: password,
             subcategory: _selectedCategory,
-            notes: null,
+            notes: _existing?.details,
             isFavourite: _isFavourite,
           );
 
@@ -153,194 +157,164 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     }
   }
 
+  Future<void> _generatePassword() async {
+    final generated = await PasswordGeneratorSheet.show(context);
+    if (generated == null || generated.isEmpty || !mounted) return;
+    setState(() {
+      _passwordController.text = generated;
+      _obscurePassword = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
+    final hasPassword = _passwordController.text.isNotEmpty;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          isEditing ? 'Edit Password' : 'Save Password',
-          style: const TextStyle(
-            color: AppColors.textPrimaryNavy,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
-              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
-            ),
-            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
-            onPressed: () => setState(() => _isFavourite = !_isFavourite),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 14.0, top: 8.0, bottom: 8.0),
-            child: ElevatedButton(
-              onPressed: _isSaving ? null : _saveItem,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm),
+    return VaultFormScaffold(
+      category: VaultCategory.passwords,
+      title: isEditing ? 'Edit Password' : 'New Password',
+      subtitle: 'Login details for an app or website',
+      isFavourite: _isFavourite,
+      onFavouriteChanged: (v) => setState(() => _isFavourite = v),
+      saving: _isSaving,
+      onSave: _saveItem,
+      saveLabel: isEditing ? 'Save Changes' : 'Save Password',
+      children: [
+        FormSectionCard(
+          title: 'Account',
+          icon: Icons.apps_rounded,
           children: [
-            // 1. Title / App Name
-            const Text(
-              'App / Website Name *',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                hintText: 'e.g. Instagram, Gmail, Facebook',
-                prefixIcon: Icon(Icons.apps_rounded, color: AppColors.primary),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 2. User ID / Username / Email
-            const Text(
-              'User ID / Username / Email',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _usernameController,
-              decoration: const InputDecoration(
-                hintText: 'e.g. @yourhandle or user@gmail.com',
-                prefixIcon: Icon(Icons.person_outline_rounded, color: AppColors.textMutedNavy),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 3. Password
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Password *',
-                  style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-                ),
-                if (_passwordController.text.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _strength.color.withAlpha(40),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _strength.label,
-                      style: TextStyle(
-                        color: _strength.color,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _passwordController,
-              obscureText: _obscurePassword,
-              decoration: InputDecoration(
-                hintText: 'Enter password',
-                prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.textMutedNavy),
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    color: AppColors.textMutedNavy,
-                  ),
-                  onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            LabeledField(
+              label: 'App / Website name',
+              required: true,
+              child: TextField(
+                controller: _nameController,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  hintText: 'e.g. Instagram, Gmail, HDFC',
+                  prefixIcon: Icon(Icons.apps_rounded),
                 ),
               ),
             ),
-
-            // Strength bar
-            if (_passwordController.text.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: _strength.score,
-                  backgroundColor: AppColors.border,
-                  valueColor: AlwaysStoppedAnimation<Color>(_strength.color),
-                  minHeight: 4,
-                ),
-              ),
-            ],
-
-            const SizedBox(height: AppSpacing.md),
-
-            // 4. Website URL (Optional)
-            const Text(
-              'Website URL (Optional)',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _urlController,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(
-                hintText: 'e.g. instagram.com (optional)',
-                prefixIcon: Icon(Icons.link_rounded, color: AppColors.textMutedNavy),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-
-            // 5. Category selector
-            const Text(
-              'Category',
-              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
-            ),
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedCategory,
-                  isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
-                  items: _categories
-                      .map((val) => DropdownMenuItem(value: val, child: Text(val)))
-                      .toList(),
-                  onChanged: (val) {
-                    if (val != null) setState(() => _selectedCategory = val);
-                  },
+            LabeledField(
+              label: 'Username or email',
+              child: TextField(
+                controller: _usernameController,
+                keyboardType: TextInputType.emailAddress,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  hintText: '@handle or you@gmail.com',
+                  prefixIcon: Icon(Icons.alternate_email_rounded),
                 ),
               ),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            LabeledField(
+              label: 'Website',
+              child: TextField(
+                controller: _urlController,
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.next,
+                decoration: const InputDecoration(
+                  hintText: 'instagram.com',
+                  prefixIcon: Icon(Icons.link_rounded),
+                ),
+              ),
+            ),
           ],
         ),
-      ),
+        FormSectionCard(
+          title: 'Password',
+          icon: Icons.lock_rounded,
+          children: [
+            LabeledField(
+              label: 'Password',
+              required: true,
+              trailing: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: hasPassword
+                    ? Container(
+                        key: ValueKey(_strength),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _strength.color.withAlpha(35),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _strength.label,
+                          style: TextStyle(color: _strength.color, fontWeight: FontWeight.w800, fontSize: 11.5),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              child: TextField(
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                style: const TextStyle(fontWeight: FontWeight.w600, letterSpacing: 0.4),
+                decoration: InputDecoration(
+                  hintText: 'Enter or generate a password',
+                  prefixIcon: const Icon(Icons.key_rounded),
+                  suffixIcon: IconButton(
+                    tooltip: _obscurePassword ? 'Show' : 'Hide',
+                    icon: Icon(_obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+              ),
+            ),
+            if (hasPassword)
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: _strength.score),
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOutCubic,
+                builder: (context, value, _) => Row(
+                  children: [
+                    for (var i = 0; i < 4; i++) ...[
+                      if (i > 0) const SizedBox(width: 6),
+                      Expanded(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          height: 6,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(3),
+                            color: value >= (i + 1) * 0.25 - 0.01 ? _strength.color : AppColors.border,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            OutlinedButton.icon(
+              onPressed: _generatePassword,
+              icon: const Icon(Icons.auto_awesome_rounded, size: 18, color: AppColors.categoryPasswords),
+              label: const Text(
+                'Generate a strong password',
+                style: TextStyle(color: AppColors.categoryPasswords, fontWeight: FontWeight.w700),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: AppColors.categoryPasswords.withAlpha(90)),
+                backgroundColor: AppColors.categoryPasswords.withAlpha(12),
+                padding: const EdgeInsets.symmetric(vertical: 13),
+              ),
+            ),
+          ],
+        ),
+        FormSectionCard(
+          title: 'Category',
+          icon: Icons.label_rounded,
+          children: [
+            ChipSelector<String>(
+              options: _categories,
+              selected: _selectedCategory,
+              labelOf: (c) => c,
+              color: AppColors.categoryPasswords,
+              onSelected: (c) => setState(() => _selectedCategory = c),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

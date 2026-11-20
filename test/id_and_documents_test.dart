@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'vault_test_helpers.dart';
 import 'package:myvault/core/database/vault_database.dart';
 import 'package:myvault/core/security/vault_crypto_service.dart';
 import 'package:myvault/core/storage/encrypted_file_service.dart';
@@ -137,7 +138,7 @@ void main() {
         expect(retrieved.documentNumber, equals(entry['num']));
       }
 
-      final allIds = await repository.getItemsByCategory(VaultCategory.idCards);
+      final allIds = await itemsInCategory(repository, VaultCategory.idCards);
       expect(allIds.length, equals(5));
     });
 
@@ -159,19 +160,19 @@ void main() {
       );
 
       // Search by partial title
-      final byTitle = await repository.searchItems('Passport');
+      final byTitle = await searchVault(repository, 'Passport');
       expect(byTitle.any((i) => i.id == 'id_search_1'), isTrue);
 
       // Search by document number
-      final byNumber = await repository.searchItems('8822910');
+      final byNumber = await searchVault(repository, '8822910');
       expect(byNumber.any((i) => i.id == 'id_search_1'), isTrue);
 
       // Search by holder name
-      final byHolder = await repository.searchItems('Aarav');
+      final byHolder = await searchVault(repository, 'Aarav');
       expect(byHolder.any((i) => i.id == 'id_search_1'), isTrue);
 
       // Search for non-existent query
-      final emptyResult = await repository.searchItems('NonExistentTermXYZ');
+      final emptyResult = await searchVault(repository, 'NonExistentTermXYZ');
       expect(emptyResult, isEmpty);
     });
 

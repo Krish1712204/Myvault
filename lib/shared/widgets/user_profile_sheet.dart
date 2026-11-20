@@ -1,265 +1,267 @@
-import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/profile/user_profile_provider.dart';
+import '../../features/auth/domain/vault_auth_notifier.dart';
+import '../state/vault_state_provider.dart';
+import 'gradient_button.dart';
 
-class UserProfileSheet extends ConsumerWidget {
+/// Edit profile: photo and display name, plus a few true facts about this vault.
+class UserProfileSheet extends ConsumerStatefulWidget {
   const UserProfileSheet({super.key});
 
   static void show(BuildContext context) {
     showModalBottomSheet(
-      context: context,
+            // Above the bottom navigation bar, not inside the current tab.
+      useRootNavigator: true,
+context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => const UserProfileSheet(),
     );
   }
 
-  Future<void> _pickPhoto(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<UserProfileSheet> createState() => _UserProfileSheetState();
+}
+
+class _UserProfileSheetState extends ConsumerState<UserProfileSheet> {
+  late final TextEditingController _name = TextEditingController(text: ref.read(userProfileProvider).name);
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _toast(String message, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: error ? AppColors.error : AppColors.success),
+    );
+  }
+
+  Future<void> _pickPhoto() async {
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final result = await FilePicker.pickFiles(type: FileType.image);
-      if (result.isNotEmpty) {
-        final path = result.first.path;
-        if (path != null) {
-          await ref.read(userProfileProvider.notifier).setPhoto(path);
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Profile photo updated!'),
-                backgroundColor: AppColors.success,
-              ),
-            );
-          }
-        }
-      }
+      final path = result.isNotEmpty ? result.first.path : null;
+      if (path == null) return;
+      await ref.read(userProfileProvider.notifier).setPhoto(path);
+      FilePicker.clearTemporaryFiles().ignore(); // drop the picker's cache copy
+      if (mounted) _toast('Profile photo updated');
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not pick photo: $e'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
+      if (mounted) _toast('Could not update photo: $e', error: true);
     }
   }
 
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    await ref.read(userProfileProvider.notifier).setName(_name.text);
+    if (!mounted) return;
+    Navigator.pop(context);
+    _toast('Profile saved');
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final profile = ref.watch(userProfileProvider);
-    final hasPhoto = profile.photoPath != null && File(profile.photoPath!).existsSync();
+    final photo = ref.watch(profilePhotoProvider).valueOrNull;
+    final auth = ref.watch(vaultAuthStateProvider);
+    final itemCount = ref.watch(vaultItemsProvider).length;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = AppColors.textPrimaryNavy;
+    final fingerprintOn = auth.isBiometricAvailable && auth.isBiometricEnabled;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Handle bar
-            Container(
-              width: 44,
-              height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Profile Picture
-            Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: hasPhoto
-                        ? null
-                        : const LinearGradient(
-                            colors: [Color(0xFF1E88E5), Color(0xFF0D47A1)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                    border: Border.all(color: AppColors.primary, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withAlpha(50),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: hasPhoto
-                        ? Image.file(
-                            File(profile.photoPath!),
-                            width: 96,
-                            height: 96,
-                            fit: BoxFit.cover,
-                          )
-                        : const Center(
-                            child: Text(
-                              'KS',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                          ),
-                  ),
-                ),
-                // Edit photo badge
-                InkWell(
-                  onTap: () => _pickPhoto(context, ref),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Name
-            Text(
-              profile.name,
-              style: const TextStyle(
-                color: AppColors.textPrimaryNavy,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 4),
-
-            // Role / Title Badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                profile.role,
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.sheetSurface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-
-            // Security Details Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: const Column(
+              const SizedBox(height: 22),
+              Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.shield_rounded, color: AppColors.success, size: 20),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Zero-Cloud Vault Owner',
-                          style: TextStyle(
-                            color: AppColors.textPrimaryNavy,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
+                  Container(
+                    width: 104,
+                    height: 104,
+                    padding: const EdgeInsets.all(3),
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: SweepGradient(
+                        colors: AppColors.avatarRingGradient,
                       ),
-                      Text(
-                        'Offline',
-                        style: TextStyle(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
+                    ),
+                    child: ClipOval(
+                      child: Container(
+                        color: isDark ? AppColors.darkSurface : AppColors.primaryLight,
+                        child: photo != null
+                            ? Image.memory(photo, fit: BoxFit.cover, gaplessPlayback: true)
+                            : Center(
+                                child: profile.initials.isEmpty
+                                    ? const Icon(Icons.person_rounded, size: 48, color: AppColors.primary)
+                                    : Text(
+                                        profile.initials,
+                                        style: const TextStyle(
+                                          color: AppColors.primary,
+                                          fontSize: 34,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                              ),
                       ),
-                    ],
-                  ),
-                  Divider(height: 20),
-                  Row(
-                    children: [
-                      Icon(Icons.fingerprint_rounded, color: AppColors.primary, size: 20),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Biometric Authentication',
-                          style: TextStyle(
-                            color: AppColors.textPrimaryNavy,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-                      Text(
-                        'Enrolled',
-                        style: TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Change Photo Button
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _pickPhoto(context, ref),
-                    icon: const Icon(Icons.photo_library_outlined, size: 18),
-                    label: const Text('Update Photo'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                   ),
-                ),
-                if (hasPhoto) ...[
-                  const SizedBox(width: 12),
-                  IconButton(
-                    onPressed: () => ref.read(userProfileProvider.notifier).removePhoto(),
-                    icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                    tooltip: 'Remove Custom Photo',
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: _RoundAction(
+                      icon: Icons.photo_camera_rounded,
+                      color: AppColors.primary,
+                      tooltip: 'Change photo',
+                      onTap: _pickPhoto,
+                    ),
                   ),
+                  if (profile.hasPhoto)
+                    Positioned(
+                      left: -2,
+                      bottom: -2,
+                      child: _RoundAction(
+                        icon: Icons.delete_outline_rounded,
+                        color: AppColors.error,
+                        tooltip: 'Remove photo',
+                        onTap: () => ref.read(userProfileProvider.notifier).removePhoto(),
+                      ),
+                    ),
                 ],
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
+              ),
+              const SizedBox(height: 22),
+              TextField(
+                controller: _name,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _save(),
+                style: TextStyle(color: textPrimary, fontWeight: FontWeight.w700, fontSize: 16),
+                decoration: const InputDecoration(
+                  labelText: 'Your name',
+                  hintText: 'Shown in greetings',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.subtleFill,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  children: [
+                    _Fact(
+                      icon: Icons.inventory_2_rounded,
+                      label: 'Items in your vault',
+                      value: '$itemCount',
+                      color: AppColors.primary,
+                      textPrimary: textPrimary,
+                    ),
+                    const Divider(height: 20),
+                    _Fact(
+                      icon: Icons.fingerprint_rounded,
+                      label: 'Fingerprint unlock',
+                      value: fingerprintOn ? 'On' : 'Off',
+                      color: fingerprintOn ? AppColors.success : AppColors.textMutedNavy,
+                      textPrimary: textPrimary,
+                    ),
+                    const Divider(height: 20),
+                    _Fact(
+                      icon: Icons.cloud_off_rounded,
+                      label: 'Stored',
+                      value: 'Only on this phone',
+                      color: AppColors.success,
+                      textPrimary: textPrimary,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 18),
+              GradientButton(label: 'Save Profile', icon: Icons.check_rounded, loading: _saving, onPressed: _save),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+class _Fact extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final Color textPrimary;
+
+  const _Fact({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.textPrimary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(label, style: TextStyle(color: textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+        ),
+        Text(value, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 12.5)),
+      ],
+    );
+  }
+}
+
+class _RoundAction extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _RoundAction({required this.icon, required this.color, required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: color,
+        shape: const CircleBorder(side: BorderSide(color: Colors.white, width: 3)),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(padding: const EdgeInsets.all(9), child: Icon(icon, color: Colors.white, size: 18)),
+        ),
+      ),
+    );
+  }
+}

@@ -1,9 +1,12 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_spacing.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/bold_text.dart';
+import '../../../../shared/widgets/vault_form_kit.dart';
+import '../../../../core/ui/user_message.dart';
 import '../../data/vault_item_model.dart';
 
 class AddNoteScreen extends ConsumerStatefulWidget {
@@ -21,8 +24,10 @@ class AddNoteScreen extends ConsumerStatefulWidget {
 class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
-  final _contentController = TextEditingController();
+  final _contentController = BoldTextEditingController();
 
+  /// The item being edited; its tags and colour (not shown in this form) are kept on save.
+  VaultItem? _existing;
   bool _initialized = false;
   bool _isSaving = false;
   bool _isFavourite = false;
@@ -55,6 +60,7 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
         ),
       );
       if (item.id.isNotEmpty) {
+        _existing = item;
         _titleController.text = item.title;
         _contentController.text = item.details ?? '';
         if (item.subcategory != null && _categories.contains(item.subcategory)) {
@@ -84,7 +90,8 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
             title: _titleController.text.trim(),
             content: _contentController.text.trim(),
             category: _selectedCategory,
-            tags: null,
+            colorTag: _existing?.colorTag,
+            tags: _existing?.tags,
             isFavourite: _isFavourite,
           );
 
@@ -102,7 +109,7 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save note: $e'),
+          content: Text('Could not save the note. ${userMessage(e)}'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -113,159 +120,154 @@ class _AddNoteScreenState extends ConsumerState<AddNoteScreen> {
     }
   }
 
+  static const _categoryIcons = {
+    'Personal': Icons.person_rounded,
+    'Work': Icons.work_rounded,
+    'Ideas': Icons.lightbulb_rounded,
+    'Finance': Icons.account_balance_wallet_rounded,
+    'Recovery Codes': Icons.vpn_key_rounded,
+    'Security': Icons.shield_rounded,
+    'Medical': Icons.medical_services_rounded,
+    'Other': Icons.more_horiz_rounded,
+  };
+
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          isEditing ? 'Edit Note' : 'Add Note',
-          style: const TextStyle(
-            color: AppColors.textPrimaryNavy,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
-              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
-            ),
-            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
-            onPressed: () => setState(() => _isFavourite = !_isFavourite),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: TextButton(
-              onPressed: _isSaving ? null : _saveNote,
-              style: TextButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+    return Form(
+      key: _formKey,
+      child: VaultFormScaffold(
+        category: VaultCategory.notes,
+        title: isEditing ? 'Edit Note' : 'New Note',
+        subtitle: 'Private notes, codes and ideas',
+        isFavourite: _isFavourite,
+        onFavouriteChanged: (v) => setState(() => _isFavourite = v),
+        saving: _isSaving,
+        onSave: _saveNote,
+        saveLabel: isEditing ? 'Save Changes' : 'Save Note',
+        children: [
+          FormSectionCard(
+            title: 'Note',
+            icon: Icons.edit_note_rounded,
+            children: [
+              LabeledField(
+                label: 'Title',
+                required: true,
+                child: TextFormField(
+                  controller: _titleController,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.next,
+                  // Note titles are always bold.
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                  decoration: const InputDecoration(
+                    hintText: 'e.g. 2FA recovery keys, Project plan',
+                    prefixIcon: Icon(Icons.title_rounded),
+                  ),
+                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a title' : null,
+                ),
               ),
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text(
-                      'Save',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-            ),
+              LabeledField(
+                label: 'Content',
+                required: true,
+                trailing: ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _contentController,
+                  builder: (context, value, _) {
+                    final words = stripBoldMarkers(value.text).trim().isEmpty ? 0 : stripBoldMarkers(value.text).trim().split(RegExp(r'\s+')).length;
+                    return Text(
+                      '$words word${words == 1 ? '' : 's'}',
+                      style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12, fontWeight: FontWeight.w600),
+                    );
+                  },
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _FormatBar(onBold: () {
+                      _contentController.toggleBold();
+                      HapticFeedback.selectionClick();
+                    }),
+                    const SizedBox(height: 8),
+                    TextFormField(
+                  controller: _contentController,
+                  minLines: 8,
+                  maxLines: 16,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(height: 1.5),
+                  decoration: const InputDecoration(
+                    hintText: 'Write your private note, codes or thoughts here…',
+                    alignLabelWithHint: true,
+                  ),
+                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter note content' : null,
+                ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          FormSectionCard(
+            title: 'Category',
+            icon: Icons.label_rounded,
+            children: [
+              ChipSelector<String>(
+                options: _categories,
+                selected: _selectedCategory,
+                labelOf: (c) => c,
+                iconOf: (c) => _categoryIcons[c] ?? Icons.label_rounded,
+                color: AppColors.categoryNotes,
+                onSelected: (c) => setState(() => _selectedCategory = c),
+              ),
+            ],
           ),
         ],
       ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(AppSpacing.md),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title Field
-                const Text(
-                  'Title *',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    hintText: 'e.g. Project Plan, 2FA Recovery Keys, Ideas',
-                    prefixIcon: Icon(Icons.title_rounded, color: AppColors.textMutedNavy),
-                    fillColor: Colors.white,
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return 'Please enter a title';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
+    );
+  }
+}
 
-                // Category Dropdown
-                const Text(
-                  'Category',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedCategory,
-                      isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary),
-                      items: _categories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(c, style: const TextStyle(fontSize: 14))))
-                          .toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedCategory = val);
-                      },
+/// Small formatting toolbar above the note editor.
+class _FormatBar extends StatelessWidget {
+  final VoidCallback onBold;
+
+  const _FormatBar({required this.onBold});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Tooltip(
+          message: 'Bold (select text first)',
+          child: Material(
+            color: AppColors.categoryNotes.withAlpha(28),
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: onBold,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.format_bold_rounded, size: 20, color: AppColors.categoryNotes),
+                    SizedBox(width: 4),
+                    Text(
+                      'Bold',
+                      style: TextStyle(color: AppColors.categoryNotes, fontWeight: FontWeight.w800, fontSize: 13),
                     ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Note Content Field
-                const Text(
-                  'Content *',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimaryNavy,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
-                  controller: _contentController,
-                  maxLines: 8,
-                  decoration: const InputDecoration(
-                    hintText: 'Write your private note, codes, or thoughts here...',
-                    fillColor: Colors.white,
-                    alignLabelWithHint: true,
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return 'Please enter note content';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Select words, then tap Bold',
+            style: TextStyle(color: AppColors.textMutedNavy, fontSize: 12),
+          ),
+        ),
+      ],
     );
   }
 }

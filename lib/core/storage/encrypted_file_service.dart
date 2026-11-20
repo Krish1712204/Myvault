@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -80,11 +81,18 @@ class EncryptedFileService {
         ? p.basename(customRelativePath.trim())
         : null;
 
-    final fileId = '${DateTime.now().millisecondsSinceEpoch}_${random.nextInt(1000000)}';
     final extension = p.extension(sanitizedName).toLowerCase();
-    final relativePath = sanitizedRelative ?? '$fileId.enc';
-
     final filesDir = await _getFilesDirectory();
+
+    // Generated names must never collide with an existing file (that would overwrite it).
+    String relativePath;
+    if (sanitizedRelative != null) {
+      relativePath = sanitizedRelative;
+    } else {
+      do {
+        relativePath = '${DateTime.now().millisecondsSinceEpoch}_${random.nextInt(1 << 32)}.enc';
+      } while (await File(p.join(filesDir.path, relativePath)).exists());
+    }
     final targetFile = File(p.join(filesDir.path, relativePath));
 
     // Construct authenticated payload: [Magic (12B)] [Nonce (12B)] [Tag (16B)] [Ciphertext]
@@ -191,6 +199,52 @@ class EncryptedFileService {
     } catch (_) {}
   }
 
+  /// Size in bytes of one stored encrypted file, or 0 if it does not exist.
+  Future<int> encryptedFileSize(String relativePath) async {
+    try {
+      final file = File(p.join((await _getFilesDirectory()).path, relativePath));
+      return await file.exists() ? await file.length() : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Deletes the unencrypted copies the system file picker leaves in the app cache
+  /// (ID scans, contact photos, VCF files, backups). Run on launch and on lock.
+  Future<void> clearPickerCache() async {
+    if (_customStoragePath != null) return; // unit tests: no platform plugin
+    try {
+      await FilePicker.clearTemporaryFiles();
+    } catch (_) {}
+  }
+
+  /// Total bytes of encrypted attachments on disk
+  Future<int> storedFilesBytes() async => _directoryBytes(await _getFilesDirectory());
+
+  /// Total bytes of decrypted temporary previews currently on disk
+  Future<int> previewBytes() async => _directoryBytes(await _getPreviewDirectory());
+
+  static Future<int> _directoryBytes(Directory dir) async {
+    var total = 0;
+    try {
+      await for (final entity in dir.list(recursive: true, followLinks: false)) {
+        if (entity is File) total += await entity.length();
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  /// Permanently deletes every stored encrypted file. Used when a vault is created or
+  /// erased: files encrypted under a key that no longer exists can never be read again.
+  Future<void> deleteAllStoredFiles() async {
+    try {
+      final dir = await _getFilesDirectory();
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is File) await entity.delete();
+      }
+    } catch (_) {}
+  }
+
   /// Permanently deletes an encrypted file from storage
   Future<void> deleteEncryptedFile(String relativePath) async {
     try {
@@ -202,24 +256,40 @@ class EncryptedFileService {
     } catch (_) {}
   }
 
-  String _guessMimeType(String ext) {
-    switch (ext) {
-      case '.pdf':
-        return 'application/pdf';
-      case '.jpg':
-      case '.jpeg':
-        return 'image/jpeg';
-      case '.png':
-        return 'image/png';
-      case '.txt':
-        return 'text/plain';
-      case '.doc':
-      case '.docx':
-        return 'application/msword';
-      default:
-        return 'application/octet-stream';
-    }
-  }
+  /// MIME type by extension, so "Open" hands the file to an app that can show it.
+  static const Map<String, String> _mimeTypes = {
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
+    '.heic': 'image/heic',
+    '.heif': 'image/heif',
+    '.txt': 'text/plain',
+    '.csv': 'text/csv',
+    '.json': 'application/json',
+    '.xml': 'application/xml',
+    '.html': 'text/html',
+    '.rtf': 'application/rtf',
+    '.zip': 'application/zip',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.odt': 'application/vnd.oasis.opendocument.text',
+    '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    '.mp3': 'audio/mpeg',
+    '.m4a': 'audio/mp4',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.vcf': 'text/vcard',
+  };
+
+  String _guessMimeType(String ext) => _mimeTypes[ext] ?? 'application/octet-stream';
 }
 
 class FileNotFoundException implements Exception {

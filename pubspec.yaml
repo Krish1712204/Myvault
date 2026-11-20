@@ -14,7 +14,6 @@ dependencies:
   go_router: ^14.2.0
   cupertino_icons: ^1.0.8
   flutter_secure_storage: ^11.2.0
-  local_auth: ^3.0.2
   cryptography: ^2.9.0
   sqflite_sqlcipher: ^3.4.1
   path_provider: ^2.1.6
@@ -22,6 +21,12 @@ dependencies:
   file_picker: ^13.3.0
   url_launcher: ^6.3.3
   open_filex: ^5.0.0
+  google_sign_in: ^6.3.0
+  googleapis: ^17.0.0
+  http: ^1.2.2
+  # Registers automatically: runs AES-GCM on Android's hardware-accelerated crypto instead
+  # of pure Dart (~1.6 s per 6 MB photo). Same standard format, so existing files still decrypt.
+  cryptography_flutter: ^2.3.4
 
 dev_dependencies:
   flutter_test:
@@ -31,4 +36,21 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/fonts/OFL.txt
+
+  fonts:
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
+          weight: 800
 

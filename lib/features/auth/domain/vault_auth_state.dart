@@ -10,6 +10,11 @@ class VaultAuthState {
   final bool isBiometricAvailable;
   final bool isBiometricEnabled;
   final String autoLockDuration;
+  final bool lockOnBackground;
+
+  /// Offer to turn on fingerprint unlock once the vault is open: after creating a vault, or after
+  /// the upgrade to Keystore-bound keys removed the old (insecure) fingerprint setup.
+  final bool offerBiometricSetup;
   final String? errorMessage;
   final bool isLoading;
 
@@ -18,6 +23,8 @@ class VaultAuthState {
     this.isBiometricAvailable = false,
     this.isBiometricEnabled = false,
     this.autoLockDuration = '5 minutes',
+    this.lockOnBackground = true,
+    this.offerBiometricSetup = false,
     this.errorMessage,
     this.isLoading = false,
   });
@@ -49,6 +56,8 @@ class VaultAuthState {
     bool? isBiometricAvailable,
     bool? isBiometricEnabled,
     String? autoLockDuration,
+    bool? lockOnBackground,
+    bool? offerBiometricSetup,
     String? errorMessage,
     bool clearError = false,
     bool? isLoading,
@@ -58,6 +67,8 @@ class VaultAuthState {
       isBiometricAvailable: isBiometricAvailable ?? this.isBiometricAvailable,
       isBiometricEnabled: isBiometricEnabled ?? this.isBiometricEnabled,
       autoLockDuration: autoLockDuration ?? this.autoLockDuration,
+      lockOnBackground: lockOnBackground ?? this.lockOnBackground,
+      offerBiometricSetup: offerBiometricSetup ?? this.offerBiometricSetup,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       isLoading: isLoading ?? this.isLoading,
     );

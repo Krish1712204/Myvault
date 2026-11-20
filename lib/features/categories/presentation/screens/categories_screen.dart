@@ -15,19 +15,10 @@ class CategoriesScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.background,
+      // A tab root, like Search and Settings: no back button.
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => context.go('/'),
-        ),
-        title: const Text(
-          'Categories',
-          style: TextStyle(
-            color: AppColors.textPrimaryNavy,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        automaticallyImplyLeading: false,
+        title: const Text('Categories'),
       ),
       body: SafeArea(
         child: ListView(
@@ -60,7 +51,7 @@ class CategoriesScreen extends ConsumerWidget {
                           children: [
                             Text(
                               category.displayName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textPrimaryNavy,
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -69,7 +60,7 @@ class CategoriesScreen extends ConsumerWidget {
                             const SizedBox(height: 2),
                             Text(
                               '$count items',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 color: AppColors.textMutedNavy,
                                 fontSize: 13,
                               ),
@@ -77,7 +68,7 @@ class CategoriesScreen extends ConsumerWidget {
                           ],
                         ),
                       ),
-                      const Icon(
+                      Icon(
                         Icons.arrow_forward_ios_rounded,
                         color: AppColors.textMutedNavy,
                         size: 16,

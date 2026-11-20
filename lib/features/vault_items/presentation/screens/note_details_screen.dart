@@ -5,6 +5,8 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_spacing.dart';
 import '../../../../core/security/clipboard_service.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/bold_text.dart';
+import '../../../../shared/widgets/detail_actions.dart';
 import '../../data/vault_item_model.dart';
 
 class NoteDetailsScreen extends ConsumerStatefulWidget {
@@ -25,18 +27,18 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
+        title: Text(
           'Delete Note?',
           style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimaryNavy),
         ),
         content: Text(
           'Are you sure you want to permanently delete "${item.title}" from your vault? This action cannot be undone.',
-          style: const TextStyle(color: AppColors.textPrimaryNavy),
+          style: TextStyle(color: AppColors.textPrimaryNavy),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
+            child: Text('Cancel', style: TextStyle(color: AppColors.textMutedNavy)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -52,8 +54,17 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
     );
 
     if (confirmed == true && mounted) {
-      await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
+      final deleted = await ref.read(vaultItemsProvider.notifier).removeItem(item.id);
       if (!context.mounted) return;
+      if (!deleted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not delete item. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${item.title} deleted from vault'),
@@ -83,9 +94,9 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.sticky_note_2_outlined, size: 48, color: AppColors.textMutedNavy),
+              Icon(Icons.sticky_note_2_outlined, size: 48, color: AppColors.textMutedNavy),
               const SizedBox(height: 12),
-              const Text('Note not found', style: TextStyle(color: AppColors.textMutedNavy)),
+              Text('Note not found', style: TextStyle(color: AppColors.textMutedNavy)),
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: () => context.pop(),
@@ -98,12 +109,12 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
     }
 
     final item = matches.first;
-    final content = item.details ?? '';
+    final rawContent = item.details ?? '';
+    final content = rawContent;
+    final plainContent = stripBoldMarkers(rawContent);
 
-    final wordCount = content.trim().isEmpty
-        ? 0
-        : content.trim().split(RegExp(r'\s+')).length;
-    final charCount = content.length;
+    final wordCount = plainContent.trim().isEmpty ? 0 : plainContent.trim().split(RegExp(r'\s+')).length;
+    final charCount = plainContent.length;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -112,7 +123,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => context.pop(),
         ),
-        title: const Text(
+        title: Text(
           'Note Details',
           style: TextStyle(
             color: AppColors.textPrimaryNavy,
@@ -127,17 +138,17 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
               color: item.isFavourite ? Colors.amber : AppColors.textMutedNavy,
               size: 24,
             ),
-            onPressed: () {
-              ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+            onPressed: () async {
+              final saved = await ref.read(vaultItemsProvider.notifier).toggleFavourite(item.id);
+              if (!saved && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not update favourite. Please try again.'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+              }
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.edit_outlined, color: AppColors.primary, size: 22),
-            onPressed: () => context.push('/edit-note/${item.id}'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 22),
-            onPressed: () => _confirmDelete(context, item),
           ),
           const SizedBox(width: 4),
         ],
@@ -152,7 +163,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -188,10 +199,10 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                             children: [
                               Text(
                                 item.title,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   color: AppColors.textPrimaryNavy,
                                   fontSize: 20,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w800,
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -215,7 +226,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                                   const SizedBox(width: 8),
                                   Text(
                                     '$wordCount words · $charCount chars',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: AppColors.textMutedNavy,
                                       fontSize: 11,
                                     ),
@@ -227,7 +238,6 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                         ),
                       ],
                     ),
-
                   ],
                 ),
               ),
@@ -238,7 +248,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
               Container(
                 padding: const EdgeInsets.all(AppSpacing.md),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -254,7 +264,7 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Content',
                           style: TextStyle(
                             color: AppColors.textPrimaryNavy,
@@ -265,9 +275,10 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                         TextButton.icon(
                           onPressed: () {
                             if (content.isNotEmpty) {
-                              ClipboardService.copyPublic(
+                              // Secure notes hold recovery codes and the like: auto-clear.
+                              ClipboardService.copySensitive(
                                 context: context,
-                                text: content,
+                                text: plainContent,
                                 label: 'Note content',
                               );
                             }
@@ -290,18 +301,25 @@ class _NoteDetailsScreenState extends ConsumerState<NoteDetailsScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    SelectableText(
-                      content.isEmpty ? '(Empty note)' : content,
-                      style: TextStyle(
-                        color: content.isEmpty ? AppColors.textMutedNavy : AppColors.textPrimaryNavy,
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
+                    content.isEmpty
+                        ? Text('(Empty note)', style: TextStyle(color: AppColors.textMutedNavy, fontSize: 15))
+                        : SelectableText.rich(
+                            TextSpan(
+                              children: boldSpans(
+                                content,
+                                TextStyle(color: AppColors.textPrimaryNavy, fontSize: 15, height: 1.5),
+                              ),
+                            ),
+                          ),
                   ],
                 ),
               ),
 
+              const SizedBox(height: AppSpacing.xl),
+              DetailActions(
+                onDelete: () => _confirmDelete(context, item),
+                onEdit: () => context.push('/edit-note/${item.id}'),
+              ),
               const SizedBox(height: AppSpacing.lg),
             ],
           ),

@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/constants/app_spacing.dart';
 import '../../../../shared/state/vault_state_provider.dart';
+import '../../../../shared/widgets/vault_form_kit.dart';
 import '../../data/vault_item_model.dart';
+import '../../../../core/ui/user_message.dart';
+import '../../../auth/domain/vault_auth_notifier.dart';
 
 class AddIdentityScreen extends ConsumerStatefulWidget {
   final String? itemId;
@@ -32,6 +34,10 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
   bool _isSaving = false;
   bool _initialized = false;
 
+  /// The item being edited. Fields this form does not show (dates, country, notes, type) are
+  /// written back from here so that saving an edit never erases them.
+  VaultItem? _existing;
+
   // Attachment handling
   String? _existingAttachmentPath;
   PlatformFile? _newPickedAttachment;
@@ -54,6 +60,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
         ),
       );
       if (item.id.isNotEmpty) {
+        _existing = item;
         _titleController.text = item.title;
         _idNumberController.text = item.documentNumber ?? '';
         _fullNameController.text = item.fullName ?? '';
@@ -75,6 +82,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
 
   Future<void> _pickAttachment() async {
     try {
+      ref.read(vaultAuthStateProvider.notifier).allowExternalActivity();
       final files = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
@@ -83,6 +91,8 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       if (files.isNotEmpty) {
         final file = files.first;
         final bytes = await file.readAsBytes();
+        // The picker leaves an unencrypted copy in the app cache; remove it now.
+        FilePicker.clearTemporaryFiles().ignore();
         final size = file.lengthSync() ?? await file.length() ?? bytes.length;
         if (size > 25 * 1024 * 1024) {
           if (mounted) {
@@ -106,7 +116,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not pick attachment: $e'),
+            content: Text('Could not attach the file. ${userMessage(e)}'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -165,7 +175,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Document verified and ready to be secured in vault.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textMutedNavy, fontSize: 13),
@@ -206,14 +216,15 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       await ref.read(vaultItemsProvider.notifier).saveIdentityItem(
             id: widget.itemId,
             title: title,
-            documentType: title,
+            // The type drives card-specific display (e.g. Debit Card), so renaming keeps it.
+            documentType: _existing?.documentType ?? title,
             documentNumber: idNumber.isNotEmpty ? idNumber : null,
             fullName: fullName.isNotEmpty ? fullName : null,
-            issuedDate: null,
-            expiryDate: null,
-            issuingCountry: null,
-            subcategory: 'Government',
-            notes: null,
+            issuedDate: _existing?.issuedDate,
+            expiryDate: _existing?.expiryDate,
+            issuingCountry: _existing?.issuingCountry,
+            subcategory: _existing?.subcategory ?? 'Government',
+            notes: _existing?.details,
             attachmentPath: attachmentPath,
             isFavourite: _isFavourite,
           );
@@ -231,7 +242,7 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
       setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save: $e'),
+          content: Text('Could not save. ${userMessage(e)}'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -246,301 +257,127 @@ class _AddIdentityScreenState extends ConsumerState<AddIdentityScreen> {
     return '${(bytes / 1024).toStringAsFixed(0)} KB';
   }
 
+  static const _idTypes = ['Aadhaar Card', 'PAN Card', 'Passport', 'Driving License', 'Voter ID'];
+
   @override
   Widget build(BuildContext context) {
     final isEditing = widget.itemId != null;
+    final ext = _newPickedAttachment?.extension?.toLowerCase() ?? '';
+    final isImg = ['jpg', 'jpeg', 'png', 'webp'].contains(ext);
+    final selectedType = _idTypes.contains(_titleController.text.trim()) ? _titleController.text.trim() : null;
 
-    final isImg = _newPickedAttachment != null &&
-        ['jpg', 'jpeg', 'png', 'webp'].contains(_newPickedAttachment?.extension?.toLowerCase());
+    String? fileName;
+    String? fileDetail;
+    if (_newPickedAttachment != null) {
+      fileName = _newPickedAttachment!.name;
+      fileDetail = '${ext.toUpperCase()} · ${_formatFileSize(_newPickedAttachmentSize)}';
+    } else if (_existingAttachmentPath != null) {
+      fileName = 'Saved scan';
+      fileDetail = 'Already stored in your vault';
+    }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => context.pop(),
-        ),
-        title: Text(
-          isEditing ? 'Edit ID Card' : 'Add ID Card',
-          style: const TextStyle(
-            color: AppColors.textPrimaryNavy,
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(
-              _isFavourite ? Icons.star_rounded : Icons.star_border_rounded,
-              color: _isFavourite ? Colors.amber : AppColors.textMutedNavy,
-            ),
-            tooltip: _isFavourite ? 'Starred' : 'Mark as Favourite',
-            onPressed: () => setState(() => _isFavourite = !_isFavourite),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Form(
+      key: _formKey,
+      child: VaultFormScaffold(
+        category: VaultCategory.idCards,
+        title: isEditing ? 'Edit ID Card' : 'New ID Card',
+        subtitle: 'Government IDs and their scans',
+        isFavourite: _isFavourite,
+        onFavouriteChanged: (v) => setState(() => _isFavourite = v),
+        saving: _isSaving,
+        onSave: _saveIdentity,
+        saveLabel: isEditing ? 'Save Changes' : 'Save ID Card',
+        children: [
+          FormSectionCard(
+            title: 'Document',
+            icon: Icons.badge_rounded,
+            children: [
+              ChipSelector<String?>(
+                options: _idTypes,
+                selected: selectedType,
+                labelOf: (t) => t ?? '',
+                color: AppColors.categoryIdCards,
+                onSelected: (t) => setState(() => _titleController.text = t ?? ''),
               ),
-              onPressed: _isSaving ? null : _saveIdentity,
-              child: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Title Field
-                const Text(
-                  'ID Card Name / Title *',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
+              LabeledField(
+                label: 'Document name',
+                required: true,
+                child: TextFormField(
                   controller: _titleController,
-                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter a title (e.g. Aadhaar Card, PAN Card)' : null,
-                  decoration: InputDecoration(
-                    hintText: 'e.g. Aadhaar Card, PAN Card, Driving License, Passport',
-                    prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.primary),
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  textCapitalization: TextCapitalization.words,
+                  textInputAction: TextInputAction.next,
+                  onChanged: (_) => setState(() {}),
+                  validator: (val) =>
+                      (val == null || val.trim().isEmpty) ? 'Please enter a name (e.g. Aadhaar Card)' : null,
+                  decoration: const InputDecoration(
+                    hintText: 'Pick above or type, e.g. Office ID',
+                    prefixIcon: Icon(Icons.description_outlined),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Number Field (ID / Card Number)
-                const Text(
-                  'ID / Document Number *',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
+              ),
+              LabeledField(
+                label: 'Document number',
+                required: true,
+                child: TextFormField(
                   controller: _idNumberController,
                   obscureText: _obscureNumber,
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return 'Please enter document number';
-                    }
-                    return null;
-                  },
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.next,
+                  style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 1.2),
+                  validator: (val) => (val == null || val.trim().isEmpty) ? 'Please enter document number' : null,
                   decoration: InputDecoration(
-                    hintText: 'e.g. 1234 5678 9012 or ABCDE1234F',
-                    prefixIcon: const Icon(Icons.pin_outlined, color: AppColors.textMutedNavy),
+                    hintText: '1234 5678 9012 or ABCDE1234F',
+                    prefixIcon: const Icon(Icons.pin_outlined),
                     suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureNumber ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                        color: AppColors.textMutedNavy,
-                      ),
+                      tooltip: _obscureNumber ? 'Show' : 'Hide',
+                      icon: Icon(_obscureNumber ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                       onPressed: () => setState(() => _obscureNumber = !_obscureNumber),
                     ),
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Full Name on ID
-                const Text(
-                  'Full Name on ID Card',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                TextFormField(
+              ),
+              LabeledField(
+                label: 'Name on document',
+                child: TextFormField(
                   controller: _fullNameController,
-                  decoration: InputDecoration(
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
                     hintText: 'e.g. Krishna Shelar',
-                    prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textMutedNavy),
-                    fillColor: Colors.white,
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    prefixIcon: Icon(Icons.person_outline_rounded),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.lg),
-
-                // Upload ID Card Section (Image, PDF, etc.)
-                const Text(
-                  'Upload ID Card (Image, PDF, etc.)',
-                  style: TextStyle(
-                    color: AppColors.textPrimaryNavy,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    side: const BorderSide(color: AppColors.border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_newPickedAttachment != null) ...[
-                          Row(
-                            children: [
-                              if (isImg && _newPickedAttachmentBytes != null)
-                                GestureDetector(
-                                  onTap: _previewPickedFile,
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      _newPickedAttachmentBytes!,
-                                      width: 48,
-                                      height: 48,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                                )
-                              else
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primaryLight,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.red, size: 24),
-                                ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _newPickedAttachment!.name,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _formatFileSize(_newPickedAttachmentSize),
-                                      style: const TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.visibility_outlined, color: AppColors.primary, size: 20),
-                                tooltip: 'Preview Before Save',
-                                onPressed: _previewPickedFile,
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 20, color: AppColors.error),
-                                tooltip: 'Remove',
-                                onPressed: () {
-                                  setState(() {
-                                    _newPickedAttachment = null;
-                                    _newPickedAttachmentBytes = null;
-                                    _newPickedAttachmentSize = 0;
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              TextButton.icon(
-                                onPressed: _pickAttachment,
-                                icon: const Icon(Icons.refresh_rounded, size: 16),
-                                label: const Text('Replace File', style: TextStyle(fontSize: 12)),
-                              ),
-                            ],
-                          ),
-                        ] else if (_existingAttachmentPath != null) ...[
-                          Row(
-                            children: [
-                              const Icon(Icons.verified_rounded, color: AppColors.success, size: 22),
-                              const SizedBox(width: 10),
-                              const Expanded(
-                                child: Text(
-                                  'ID Card attached and secured',
-                                  style: TextStyle(color: AppColors.textPrimaryNavy, fontWeight: FontWeight.w600, fontSize: 13),
-                                ),
-                              ),
-                              OutlinedButton(
-                                onPressed: _pickAttachment,
-                                child: const Text('Replace File', style: TextStyle(fontSize: 12)),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          InkWell(
-                            onTap: _pickAttachment,
-                            borderRadius: BorderRadius.circular(10),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                              decoration: BoxDecoration(
-                                color: AppColors.background,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: AppColors.primary.withAlpha(60), style: BorderStyle.solid),
-                              ),
-                              child: const Column(
-                                children: [
-                                  Icon(Icons.upload_file_rounded, size: 36, color: AppColors.primary),
-                                  SizedBox(height: 8),
-                                  Text(
-                                    'Tap to upload ID Card (Image or PDF)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primary,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  SizedBox(height: 4),
-                                  Text(
-                                    'Supports JPG, PNG, WEBP, and PDF up to 25MB',
-                                    style: TextStyle(color: AppColors.textMutedNavy, fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xl),
-              ],
-            ),
+              ),
+            ],
           ),
-        ),
+          FormSectionCard(
+            title: 'Scan or photo',
+            icon: Icons.document_scanner_rounded,
+            children: [
+              UploadZone(
+                color: AppColors.categoryIdCards,
+                icon: Icons.add_photo_alternate_rounded,
+                title: 'Upload ID scan',
+                subtitle: 'JPG, PNG, WEBP or PDF · up to 25 MB',
+                onPick: _pickAttachment,
+                fileName: fileName,
+                fileDetail: fileDetail,
+                preview: isImg && _newPickedAttachmentBytes != null
+                    ? GestureDetector(
+                        onTap: _previewPickedFile,
+                        child: Image.memory(_newPickedAttachmentBytes!, fit: BoxFit.cover),
+                      )
+                    : null,
+                onRemove: _newPickedAttachment == null
+                    ? null
+                    : () => setState(() {
+                          _newPickedAttachment = null;
+                          _newPickedAttachmentBytes = null;
+                          _newPickedAttachmentSize = 0;
+                        }),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
