@@ -14,4 +14,18 @@ secret:
     name: Generic Password - commit://staged/test/bug_fixes_regression_test.dart
   - match: 5701d7fec5c6b1f6c2480392706ad11e2a2d82f93e297abb9fac7b649c14580a
     name: Generic Password - commit://staged/test/data_integrity_test.dart
+  - match: 7c34d1efbb02b7c7c9c18efb201aa1e83b75ccefa18c8b5863ccd78acbd20f90
+    name: Username Password - commit://a60bc500dc68ee94a37be2ec8974882afec2430f/test/backup_restore_test.dart
+  - match: b2e0d232524da0c06bb514c2292da1c10262764576d86a2bc0c950b6d151fa67
+    name: Generic Password - commit://a60bc500dc68ee94a37be2ec8974882afec2430f/test/backup_restore_test.dart
+  - match: 29bc08fa776a9ac4e3e15830d66b771193d49e41bae561bbb68461932f0e27ff
+    name: Generic Password - commit://0bbb8f9e60fc3927b74c43e2cf746ccf881c2fd2/test/encrypted_storage_test.dart
+  - match: d30861b1fcef517186c6897c8a719de89e590c8441daaedf3ed0d6806a0cd67e
+    name: Generic Password - commit://b4441d5c3fedbc39d6228d4b5986d6fa7953985a/test/password_manager_test.dart
+  - match: 8939cba846f31fe4c665a88f3a1de7a375fec6c5c0b37fcfb9cbe7a14252bf43
+    name: Generic Password - commit://b4441d5c3fedbc39d6228d4b5986d6fa7953985a/test/password_manager_test.dart
+  - match: 06b9279fe83a245357a2d8f6b2f8bc93fe7b77f8b20a90a57863aa6411b6fea8
+    name: Generic Password - commit://b4441d5c3fedbc39d6228d4b5986d6fa7953985a/test/password_manager_test.dart
+  - match: 3e6e54181f3fdbb837229d2fb55f02368930e4ab8fc90c0a0443c1d94ceebc30
+    name: Generic Password - commit://c4150ff1ae62c74dfa7a29801527d758a54b15e0/test/auth_security_test.dart
 version: 2
